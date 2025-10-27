@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 
+
 class Cell:
     """
     Represents a cell on the chess board, holding its position and the piece on it.
@@ -11,37 +12,41 @@ class Cell:
         self.piece = piece
 
     def get_pos(self):
-        return [self.row, self.col]
+        return (self.row, self.col)
+
 
 class Piece(ABC):
-    """
-    Abstract base class for all chess pieces.
-    """
+    """Abstract base class for all chess pieces (Strategy Pattern)."""
     def __init__(self, is_white):
         self.is_white = is_white
-        self.is_killed = False
 
     def can_move(self, board, start, end):
-        end_piece = end.piece
-        if end_piece and end_piece.is_white == self.is_white:
+        # Can't capture own piece
+        if end.piece and end.piece.is_white == self.is_white:
             return False
         return self._can_move(board, start, end)
 
     @abstractmethod
     def _can_move(self, board, start, end):
+        """Template Pattern - subclasses implement specific movement rules."""
         pass
+
 
 class Rook(Piece):
     """
     Represents a rook chess piece.
+    Rook moves horizontally or vertically.
     """
     def _can_move(self, board, start, end):
         x_diff = abs(start.get_pos()[0] - end.get_pos()[0])
         y_diff = abs(start.get_pos()[1] - end.get_pos()[1])
         if x_diff != 0 and y_diff != 0:
             return False
+        
+        # TODO: add path clearance check
         return self._path_clear(board, start, end)
-
+    
+    # TODO: add path clearance check
     def _path_clear(self, board, start, end):
         start_row, start_col = start.get_pos()
         end_row, end_col = end.get_pos()
@@ -60,15 +65,18 @@ class Rook(Piece):
 class Knight(Piece):
     """
     Represents a knight chess piece.
+    Knight moves in L-shape.
     """
     def _can_move(self, board, start, end):
         x_diff = abs(start.get_pos()[0] - end.get_pos()[0])
         y_diff = abs(start.get_pos()[1] - end.get_pos()[1])
         return x_diff * y_diff == 2
 
+
 class Bishop(Piece):
     """
     Represents a bishop chess piece.
+    Bishop moves diagonally.
     """
     def _can_move(self, board, start, end):
         x_diff = abs(start.get_pos()[0] - end.get_pos()[0])
@@ -91,9 +99,7 @@ class Bishop(Piece):
         return True
 
 class King(Piece):
-    """
-    Represents a king chess piece.
-    """
+    """King moves one square in any direction."""
     def _can_move(self, board, start, end):
         x_diff = abs(start.get_pos()[0] - end.get_pos()[0])
         y_diff = abs(start.get_pos()[1] - end.get_pos()[1])
@@ -107,15 +113,13 @@ class Queen(Piece):
         return Rook(self.is_white)._can_move(board, start, end) or Bishop(self.is_white)._can_move(board, start, end)
 
 class Pawn(Piece):
-    """
-    Represents a pawn chess piece.
-    """
+    """Pawn moves forward, captures diagonally."""
     def _can_move(self, board, start, end):
         start_row, start_col = start.get_pos()
         end_row, end_col = end.get_pos()
         direction = -1 if self.is_white else 1
 
-        # Move forward by 1
+        # Move forward
         if start_col == end_col and end_row - start_row == direction and end.piece is None:
             return True
 
@@ -129,41 +133,28 @@ class Pawn(Piece):
             return True
 
         # Capture diagonally
-        if (
-            abs(start_col - end_col) == 1 and
-            end_row - start_row == direction and
-            end.piece is not None and
-            end.piece.is_white != self.is_white
-        ):
+        if abs(start_col - end_col) == 1 and end_row - start_row == direction and end.piece:
             return True
-
+        # TODO: Add two-square initial move, en passant, promotion
         return False
 
+
 class PieceFactory:
-    """
-    Factory class to create chess pieces based on type.
-    """
+    """Factory Pattern - Creates pieces based on type."""
     @classmethod
-    def create(cls, piece_type, is_piece_white):
-        piece_type_mp = {
-            'rook': Rook,
-            'knight': Knight,
-            'bishop': Bishop,
-            'king': King,
-            'queen': Queen,
-            'pawn': Pawn
+    def create(cls, piece_type, is_white):
+        pieces = {
+            'rook': Rook, 'knight': Knight, 'bishop': Bishop,
+            'king': King, 'queen': Queen, 'pawn': Pawn
         }
-        piece_class = piece_type_mp.get(piece_type.lower())
-        if piece_class:
-            return piece_class(is_piece_white)
-        else:
-            raise Exception(f"Piece type invalid: {piece_type}")
+        piece_class = pieces.get(piece_type.lower())
+        if not piece_class:
+            raise ValueError(f"Invalid piece type: {piece_type}")
+        return piece_class(is_white)
+
 
 class Board:
-    """
-    Represents the chess board and manages the placement of pieces.
-    Implements the singleton pattern.
-    """
+    """Singleton Pattern - Ensures single board instance."""
     _instance = None
 
     def __new__(cls):
@@ -173,13 +164,14 @@ class Board:
         return cls._instance
 
     def __init__(self):
-        if getattr(self, '_initialized', False):
+        if self._initialized:
             return
         self.board = [[None] * 8 for _ in range(8)]
         self.initialize_board()
         self._initialized = True
 
     def initialize_board(self):
+        """Set up initial chess board configuration."""
         piece_order = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook']
         for col_idx in range(len(piece_order)):
             self.board[0][col_idx] = Cell(0, col_idx, PieceFactory.create(piece_order[col_idx], False))
@@ -195,60 +187,62 @@ class Board:
     def get_instance(cls):
         return cls()
 
+
 class Player:
-    """
-    Represents a player in the chess game.
-    """
+    """Represents a chess player."""
     def __init__(self, is_white, name):
         self.is_white = is_white
         self.name = name
+    # TODO: Add player strategy (Human vs AI) using Strategy Pattern
+
 
 class GameState(Enum):
-    """
-    Enum representing the possible states of the chess game.
-    """
+    """Enum for game states."""
     IN_PROGRESS = 'in_progress'
     WHITE_WIN = 'white_win'
     BLACK_WIN = 'black_win'
     DRAW = 'draw'
 
+
 class Move:
-    """
-    Represents a move in the chess game.
-    """
+    """Represents a chess move."""
     def __init__(self, start, end):
         self.start = start
         self.end = end
-        self.piece = start.piece
+
 
 class Game:
-    """
-    Represents the chess game, managing the board and players.
-    """
+    """Main game controller - manages game state and rules."""
     def __init__(self):
         self.board = Board.get_instance()
-        self.players = [Player(True, "Player 1"), Player(False, "Player 2")]
+        self.players = [Player(True, "White"), Player(False, "Black")]
         self.is_white_turn = True
         self.current_state = GameState.IN_PROGRESS
 
     def is_valid_move(self, move):
-        # Basic validation: check if piece exists and belongs to current player
-        if move.start.piece is None:
+        """Validate move based on piece rules and game state."""
+        if not move.start.piece:
             return False
         if move.start.piece.is_white != self.is_white_turn:
             return False
         return move.start.piece.can_move(self.board, move.start, move.end)
+        # TODO: Add check/checkmate validation
 
     def make_move(self, start_row, start_col, end_row, end_col):
+        """Execute a validated move."""
+        # Bounds check
+        if not all(0 <= x < 8 for x in [start_row, start_col, end_row, end_col]):
+            return False
+
         start_cell = self.board.board[start_row][start_col]
         end_cell = self.board.board[end_row][end_col]
         move = Move(start_cell, end_cell)
 
         if self.is_valid_move(move):
-            if end_cell.piece is not None:
-                end_cell.piece.is_killed = True
-                if isinstance(end_cell.piece, King):
-                    self.current_state = GameState.WHITE_WIN if self.is_white_turn else GameState.BLACK_WIN
+            # Simplified win condition
+            if end_cell.piece and isinstance(end_cell.piece, King):
+                self.current_state = GameState.WHITE_WIN if self.is_white_turn else GameState.BLACK_WIN
+
             end_cell.piece = start_cell.piece
             start_cell.piece = None
             self.is_white_turn = not self.is_white_turn
@@ -298,3 +292,10 @@ def play_chess_game():
 
 # To play the game, call:
 # play_chess_game()
+
+# TODO: Add move history with Memento pattern
+# TODO: Add Observer pattern for game events/notifications
+# TODO: Add undo/redo functionality
+# TODO: Add checkmate detection
+# TODO: Add stalemate detection
+# TODO: Add draw conditions (50-move rule, threefold repetition)
