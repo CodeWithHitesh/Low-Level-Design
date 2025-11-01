@@ -131,9 +131,9 @@ class PlayerStrategy(ABC):
 class HumanPlayerStrategy(PlayerStrategy):
     def make_move(self, board):
         while True:
-            dir = (str(input('Enter direction to move out of: UP, DOWN, RIGHT and LEFT'))).upper()
+            choice = (str(input('Enter direction to move out of: UP, DOWN, RIGHT and LEFT'))).upper()
             try:
-                coordinates = Direction[dir]
+                coordinates = Direction[choice].value
                 return coordinates
             except KeyError:
                 print("Please enter valid direction!")
@@ -179,11 +179,11 @@ class Game:
             
             head_x, head_y = self.snake[0]
             
-            new_head_x, new_head_y = dir_x + head_x, dir_y + head_y
+            new_head_x, new_head_y = dir_x + head_x, (dir_y + head_y) % len(self.grid[0])
 
             if not (0 <= new_head_x < len(self.grid)):
                 self.curr_state = GameState.GAME_OVER
-                print("Game Over! Hit Boundary!\n")
+                print("Game Over! Hit Vertical Boundary!\n")
 
             elif self.grid[new_head_x][new_head_y] == CellValues.SNAKE and [new_head_x, new_head_y] != self.snake[-1]:
                 self.curr_state = GameState.GAME_OVER
