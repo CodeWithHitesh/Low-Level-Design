@@ -1,195 +1,197 @@
+"""
+Parking Lot - Low Level Design
+
+Design Patterns:
+    - Strategy  → ParkingFeeStrategy, PaymentStrategy
+    - Factory   → VehicleFactory
+    - Composition → ParkingLot -> ParkingFloor -> ParkingSlot
+
+Principles:
+    - SRP: Each class has a single, well-defined responsibility
+    - OCP: New fee strategies / payment methods without modifying existing code
+    - DIP: High-level modules depend on abstractions (Strategy interfaces)
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
 
 
-class VehicleType(Enum):
-    car = 'car'
-    bike = 'bike'
+# ─── Enums ────────────────────────────────────────────────────
 
+class VehicleType(Enum):
+    CAR = "car"
+    BIKE = "bike"
+
+
+class DurationType(Enum):
+    HOURS = "hours"
+    DAYS = "days"
+
+
+# ─── Fee Strategy (Strategy Pattern) ─────────────────────────
+
+class ParkingFeeStrategy(ABC):
+    @abstractmethod
+    def calculateFee(self, vehicleType: VehicleType, duration: int,
+                     durationType: DurationType) -> float:
+        pass
+
+
+class BasicHourlyFeeStrategy(ParkingFeeStrategy):
+    def calculateFee(self, vehicleType: VehicleType, duration: int,
+                     durationType: DurationType) -> float:
+        rates = {VehicleType.CAR: 10, VehicleType.BIKE: 5}
+        hourly = rates.get(vehicleType, 10)
+        total = hourly * duration
+        if durationType == DurationType.DAYS:
+            total *= 24
+        return total
+
+
+class PremiumHourlyFeeStrategy(ParkingFeeStrategy):
+    """Higher rates for premium zones / peak hours."""
+    pass
+
+
+# ─── Vehicle & Factory ────────────────────────────────────────
 
 @dataclass
 class Vehicle(ABC):
-    licensePlate: str 
-    vehicleType: VehicleType 
+    licensePlate: str
+    vehicleType: VehicleType
     feeStrategy: ParkingFeeStrategy
 
     @abstractmethod
-    def calculateFee(self, duration, durationType):
+    def calculateFee(self, duration: int, durationType: DurationType) -> float:
         pass
 
 
 class Car(Vehicle):
-    def calculateFee(self, duration, durationType):
-        self.feeStrategy.calculateFee(self.vehicleType, duration, durationType) 
+    def calculateFee(self, duration: int, durationType: DurationType) -> float:
+        return self.feeStrategy.calculateFee(self.vehicleType, duration, durationType)
 
 
 class Bike(Vehicle):
-    def calculateFee(self, duration, durationType):
-        self.feeStrategy.calculateFee(self.vehicleType, duration, durationType)
+    def calculateFee(self, duration: int, durationType: DurationType) -> float:
+        return self.feeStrategy.calculateFee(self.vehicleType, duration, durationType)
 
 
-# Factory Pattern not necessarily required in this problem 
-class VehicleFactory():
+class VehicleFactory:
+    """Centralises vehicle creation. Easy to extend for new types."""
+
     @staticmethod
-    def createVehicle(licensePlate, vehicleType, feeStrategy):
+    def createVehicle(licensePlate: str, vehicleType: VehicleType,
+                      feeStrategy: ParkingFeeStrategy) -> Vehicle:
         vehicleTypeMap = {
-            VehicleType.car: Car,
-            VehicleType.bike: Bike,
+            VehicleType.CAR: Car,
+            VehicleType.BIKE: Bike,
         }
+        cls = vehicleTypeMap.get(vehicleType, Car)
+        return cls(licensePlate, vehicleType, feeStrategy)
 
-        return vehicleTypeMap.get(vehicleType, Car)(licensePlate, vehicleType, feeStrategy)
 
+# ─── Payment (Strategy Pattern) ──────────────────────────────
 
 class PaymentStrategy(ABC):
     @abstractmethod
-    def processPayment(self, amount):
+    def processPayment(self, amount: float) -> bool:
         pass
 
 
 class CreditCardPayment(PaymentStrategy):
-    def processPayment(self, amount):
-        print(f"Card Payment Processing: {amount}!")
+    def processPayment(self, amount: float) -> bool:
+        print(f"Credit Card Payment: ₹{amount}")
+        return True
 
 
 class CashPayment(PaymentStrategy):
-    def processPayment(self, amount):
-        print(f"Cash Payment Processing: {amount}!") 
+    def processPayment(self, amount: float) -> bool:
+        print(f"Cash Payment: ₹{amount}")
+        return True
 
 
 class Payment:
-    def __init__(self, amount: int, paymentStrategy: PaymentStrategy):
-        self.paymentStrategy = paymentStrategy
+    def __init__(self, amount: float, paymentStrategy: PaymentStrategy):
         self.amount = amount
+        self.paymentStrategy = paymentStrategy
 
-    def processPayment(self):
-        if self.amount < 0:
-            print("Invalid Payment Amount!")
-            return
-        self.paymentStrategy.processPayment(self.amount)
-
-
-class DurationType(Enum):
-    HOURS = 'hours'
-    DAYS = 'days'
+    def processPayment(self) -> bool:
+        if self.amount <= 0:
+            print("Invalid payment amount!")
+            return False
+        return self.paymentStrategy.processPayment(self.amount)
 
 
-class ParkingFeeStrategy(ABC):
-    @abstractmethod
-    def calculateFee(self, vehicleType, duration, durationType):
-        pass 
-
-
-class BasicHourlyFeeStrategy(ParkingFeeStrategy):
-    def calculateFee(self, vehicleType, duration, durationType):
-        vehicleFee = {
-            VehicleType.car: 10,
-            VehicleType.bike: 5
-        }
-
-        hourlyFee = vehicleFee.get(vehicleType, 10)
-        totalFee = hourlyFee * duration
-
-        if durationType == DurationType.DAYS:
-            totalFee *= 24  
-
-        return totalFee
-
-class PremiumHourlyFeeStrategy(ParkingFeeStrategy):
-    pass
-
+# ─── Parking Slot ─────────────────────────────────────────────
 
 @dataclass
 class ParkingSlot:
     spotNumber: int
     slotType: VehicleType
     vehicle: Optional[Vehicle] = field(default=None)
-    isOccupied: Optional[bool] = field(default=False)
+    isOccupied: bool = field(default=False)
 
-    def parkVehicle(self, vehicle):
-        if self.isOccupied and self.vehicle is not None:
-            raise Exception(f"Parking slot already occupied by vehicle: {self.vehicle.licensePlate}")
-        
+    def parkVehicle(self, vehicle: Vehicle):
+        if self.isOccupied:
+            raise Exception(f"Slot {self.spotNumber} already occupied by {self.vehicle.licensePlate}")
         self.vehicle = vehicle
         self.isOccupied = True
-    
+
     def vacateSlot(self):
-        self.isOccupied = False 
         self.vehicle = None
+        self.isOccupied = False
 
 
-""" 
-    Composite pattern can be used in the parking lot as well.
-    For example, in a house we could have multiple floors, on
-    each floor we could have multiple applicances. 
-    Similarly, in parking lot:
-    Parking Lot -> Multiple floors -> parking slots
-    So, we could simply check that if any floor is full,
-    parking slots are occupied
-    To check for parking lot full, check if it's components
-    are full, which is floors. 
-    We can mention this verbally, no need to implement because
-    of time crunch.
-"""
-@dataclass
-class ParkingLot: 
-    parkingFloors: List[ParkingFloor]
-
-    def findAvailableSlot(self, vehicleType):
-
-        for floor in self.parkingFloors:
-            slot = floor.findAvailableSlot(vehicleType)
-            if slot:
-                return slot 
-            
-        return None 
-    
-    def parkVehicle(self, vehicle: Vehicle):
-        vehicleType = vehicle.vehicleType
-        slot = self.findAvailableSlot(vehicleType)
-
-        if slot:
-            slot.parkVehicle(vehicle)
-            print(f"{vehicle.licensePlate} parked at slot number: {slot.spotNumber}.")
-        else:
-            print("No empty slot found!")
-    
-    def vacateSpot(self, spot: ParkingSlot, vehicle: Vehicle):
-        if not spot:
-            print("None value passed for the slot!")
-            return 
-
-        if not spot.isOccupied:
-            print("Vacant spot already!")
-            return
-        
-        if spot.vehicle != vehicle:
-            print("Spot is not filled with this particular vehicle")
-            return 
-        
-        spot.vacateSlot()
-        print(f"Slot number {spot.spotNumber} has been vacated!")
-
-"""
-    In extensibility, it is majorly asked to implement multi
-    floor parking lot system. In that case, we will have 
-    Parking Lot -> List of parking floors
-    Parking Floor -> List of parking slots
-    We can use composition / builder pattern or even avoid any 
-    of them.
-"""
-
+# ─── Parking Floor ────────────────────────────────────────────
 
 @dataclass
 class ParkingFloor:
-    parkingSlots: List[ParkingSlot]
     floorNumber: int
+    parkingSlots: List[ParkingSlot]
 
-    def findAvailableSlot(self, vehicleType):
-
+    def findAvailableSlot(self, vehicleType: VehicleType) -> Optional[ParkingSlot]:
         for slot in self.parkingSlots:
             if not slot.isOccupied and slot.slotType == vehicleType:
-                return slot 
-            
+                return slot
         return None
+
+
+# ─── Parking Lot (Composition) ───────────────────────────────
+
+@dataclass
+class ParkingLot:
+    """
+    Top-level orchestrator.
+    Composition: ParkingLot → ParkingFloor → ParkingSlot
+    """
+    parkingFloors: List[ParkingFloor]
+
+    def findAvailableSlot(self, vehicleType: VehicleType) -> Optional[ParkingSlot]:
+        for floor in self.parkingFloors:
+            slot = floor.findAvailableSlot(vehicleType)
+            if slot:
+                return slot
+        return None
+
+    def parkVehicle(self, vehicle: Vehicle):
+        slot = self.findAvailableSlot(vehicle.vehicleType)
+        if not slot:
+            print("No available slot found!")
+            return
+
+        slot.parkVehicle(vehicle)
+        print(f"{vehicle.licensePlate} parked at slot {slot.spotNumber}.")
+
+    def vacateSlot(self, slot: ParkingSlot, vehicle: Vehicle):
+        if not slot.isOccupied:
+            print("Slot is already vacant!")
+            return
+
+        if slot.vehicle != vehicle:
+            print("This vehicle is not parked in this slot!")
+            return
+
+        slot.vacateSlot()
+        print(f"Slot {slot.spotNumber} vacated. {vehicle.licensePlate} exited.")
