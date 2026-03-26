@@ -22,7 +22,7 @@
 
 | # | Feature | Key Classes / Pattern |
 |---|---------|----------------------|
-| 1 | Vehicle hierarchy with type-based pricing | `Vehicle` (ABC), `EconomyVehicle`, `LuxuryVehicle`, `Bike` — **Inheritance + polymorphism** |
+| 1 | Vehicle hierarchy with type-based pricing | `Vehicle` (ABC), `EconomyVehicle`, `LuxuryVehicle`, `Bike` — **Inheritance** |
 | 2 | Availability check (date-overlap + maintenance) | `Vehicle.isAvailable()`, `Reservation.overlaps()` |
 | 3 | Rental store inventory management | `RentalStore` — add / remove / list available vehicles |
 | 4 | Reservation creation with conflict prevention | `ReservationManager` — validates availability before booking |
