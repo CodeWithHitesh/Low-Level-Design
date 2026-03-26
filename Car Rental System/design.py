@@ -22,17 +22,25 @@ class ReservationStatus(Enum):
     cancelled = "cancelled"
 
 
-@dataclass
-class Reservation:
-    id: int 
-    vehicle: Vehicle
-    startDate: date 
-    endDate: date 
-    status: ReservationStatus 
-    user: User
+# Observer Pattern
+class Observer(ABC):
+    @abstractmethod
+    def notify(self, message):
+        pass  
 
-    def overlaps(self, startDate, endDate):
-        return not (self.endDate < startDate or self.startDate > endDate)
+
+@dataclass
+class User:
+    id: int
+    name: str 
+
+
+@dataclass
+class UserObserver(Observer):
+    user: User
+    
+    def notify(self, message: str):
+        print(f"{self.user.name} notified: {message}!")
 
 
 @dataclass
@@ -41,7 +49,7 @@ class Vehicle(ABC):
     model: str
     type: VehicleType
     baseRentalPrice: float 
-    reservations: List[Reservation]
+    reservations: List['Reservation'] = field(default_factory=list)
     maintenanceStatus: VehicleStatus = field(default=VehicleStatus.Available)
 
     @abstractmethod
@@ -82,6 +90,19 @@ class Bike(Vehicle):
 
 
 @dataclass
+class Reservation:
+    id: int 
+    vehicle: Vehicle
+    startDate: date 
+    endDate: date 
+    status: ReservationStatus 
+    user: User
+
+    def overlaps(self, startDate, endDate):
+        return not (self.endDate < startDate or self.startDate > endDate)
+
+
+@dataclass
 class Location: 
     city: str 
     state: str 
@@ -96,8 +117,8 @@ class RentalStore:
     vehicles: List[Vehicle]
     location: Location
 
-    def getAvailableVehicles(self, startDate, endDate):
-        pass 
+    def getAvailableVehicles(self, startDate: date, endDate: date) -> List[Vehicle]:
+        return [v for v in self.vehicles if v.isAvailable(startDate, endDate)]
 
     def addVehicle(self, vehicle: Vehicle):
         self.vehicles.append(vehicle)
@@ -140,6 +161,7 @@ class VehicleFactory:
 
         return vehicleClass(registrationNumber, model, vehicleType, baseRentalPrice)
 
+
 @dataclass
 class ReservationManager:
     next_id: int = field(default=1)
@@ -176,29 +198,47 @@ class PaymentProcessor:
         paymentStrategy.processPayment(amount)
 
 
-# Observer Pattern
-class Observer(ABC):
-    @abstractmethod
-    def notify(self, message):
-        pass  
-
-
-@dataclass
-class User:
-    id: int
-    name: str 
-
-@dataclass
-class UserObserver(Observer):
-    user: User
-    
-    def notify(self, message: str):
-        print(f"{self.user.name} notified: {message}!")
-
-@dataclass
+# Singleton Pattern
 class RentalSystem:
-    rentalStores: List[RentalStore]
-    vehicleFactory: VehicleFactory 
-    reservationManager: ReservationManager
-    paymentProcessor: PaymentProcessor
-    observers: List[Observer]
+    _instance = None
+
+    def __init__(self, rentalStores: List[RentalStore], vehicleFactory: VehicleFactory,
+                 reservationManager: ReservationManager, paymentProcessor: PaymentProcessor):
+        if RentalSystem._instance is not None:
+            raise Exception("RentalSystem is a singleton — use get_instance()")
+        self.rentalStores = rentalStores
+        self.vehicleFactory = vehicleFactory
+        self.reservationManager = reservationManager
+        self.paymentProcessor = paymentProcessor
+        self.observers: List[Observer] = []
+
+    @classmethod
+    def get_instance(cls, rentalStores: List[RentalStore], vehicleFactory: VehicleFactory,
+                     reservationManager: ReservationManager, paymentProcessor: PaymentProcessor):
+        if cls._instance is None:
+            cls._instance = cls(rentalStores, vehicleFactory, reservationManager, paymentProcessor)
+        return cls._instance
+
+    def addObserver(self, observer: Observer):
+        self.observers.append(observer)
+
+    def notifyObservers(self, message: str):
+        for observer in self.observers:
+            observer.notify(message)
+
+    def bookVehicle(self, user: User, store: RentalStore, registrationNum: str,
+                    startDate: date, endDate: date, paymentStrategy: PaymentStrategy):
+        for vehicle in store.vehicles:
+            if vehicle.registrationNumber == registrationNum:
+                reservation = self.reservationManager.makeReservation(user, vehicle, startDate, endDate)
+                days = (endDate - startDate).days
+                amount = vehicle.calculateRent(days)
+                self.paymentProcessor.processPayment(paymentStrategy, amount)
+                self.notifyObservers(f"Reservation {reservation.id} confirmed for {user.name}")
+                return reservation
+        raise ValueError(f"Vehicle {registrationNum} not found in store {store.name}")
+
+    # TODO: searchVehicles(city, vehicleType, startDate, endDate) — search across stores
+    # TODO: cancelReservation(reservationId) — cancel + refund logic
+    # TODO: modifyReservation(reservationId, newDates) — reschedule
+    # TODO: Add locking per vehicle in makeReservation for thread-safety under concurrent requests

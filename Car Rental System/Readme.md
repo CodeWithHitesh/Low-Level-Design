@@ -1,54 +1,93 @@
-Problem Statement
+# Car Rental System — Low Level Design
 
-A car rental system is designed to efficiently manage vehicle inventory, handle reservations, process payments, and track rental operations. The system needs to support multiple vehicle types, manage availability across different locations, handle user reservations, and provide a seamless rental experience. The system should be scalable, reliable, and capable of handling concurrent operations.
+## Problem Statement (as asked in interviews)
 
-Rules of the System:
-Setup:
+> Design a Car Rental System where users can rent vehicles from rental stores. Each store has an inventory of different vehicle types. Users should be able to check vehicle availability for a date range, make reservations, and pay for the rental. The system should prevent double-booking and support multiple payment methods.
 
-• The business operates multiple rental stores across different locations.
+---
 
-• Each store has its own inventory of vehicles of various types (economy, luxury, SUV, etc.).
+## Candidate Understanding (first 2–3 minutes)
 
-• Vehicles have attributes like registration number, model, make, year, condition, and rental price.
+- Multiple **rental stores**, each at a different location, each with its own fleet of vehicles.
+- Vehicles have **types** (Economy, Luxury, Bike, etc.) with different pricing multipliers.
+- A user picks a **store → date range → vehicle**, and the system checks **availability** (no overlapping confirmed reservations, not under maintenance).
+- On confirmation a **Reservation** is created; payment is processed via a chosen **payment method** (Cash / Card).
+- **Observers** (e.g. the user) are notified on key events.
 
-• The system tracks vehicle availability and manages reservations.
+---
 
-‍
+## Scope for a 45-minute Round
 
-Operation:
+### Core Features (implement)
 
-• Users can search for available vehicles based on location, date range, and vehicle preferences.
+| # | Feature | Key Classes / Pattern |
+|---|---------|----------------------|
+| 1 | Vehicle hierarchy with type-based pricing | `Vehicle` (ABC), `EconomyVehicle`, `LuxuryVehicle`, `Bike` — **Inheritance + polymorphism** |
+| 2 | Availability check (date-overlap + maintenance) | `Vehicle.isAvailable()`, `Reservation.overlaps()` |
+| 3 | Rental store inventory management | `RentalStore` — add / remove / list available vehicles |
+| 4 | Reservation creation with conflict prevention | `ReservationManager` — validates availability before booking |
+| 5 | Payment processing with multiple methods | `PaymentStrategy` (ABC), `CashPayment`, `CardPayment` — **Strategy Pattern** |
+| 6 | Vehicle creation without exposing concrete classes | `VehicleFactory` — **Factory Pattern** |
+| 7 | Notification on booking events | `Observer` (ABC), `UserObserver` — **Observer Pattern** |
 
-• Users can filter and sort vehicles based on various criteria (price, type, features).
+### TODO Features (out of scope — mention to interviewer but don't code)
 
-• Reservations can be created, modified, or canceled by users.
+- **TODO:** Search vehicles across multiple stores by city, vehicle type, date range
+- **TODO:** Cancel reservation with refund logic
+- **TODO:** Modify reservation (reschedule to new dates)
+- **TODO:** Add locking per vehicle in `makeReservation` for thread-safety under concurrent requests
 
-• The system generates billing based on rental duration and additional services.
+---
 
-• Payment processing handles various payment methods.
+## Design Patterns Used
 
-‍
+| Pattern | Where | Why |
+|---------|-------|-----|
+| **Strategy** | `PaymentProcessor` + `PaymentStrategy` | Swap payment methods at runtime without changing processor logic |
+| **Factory** | `VehicleFactory.create_vehicle()` | Decouple vehicle creation from client code; easy to add new types |
+| **Observer** | `Observer` / `UserObserver` on `RentalSystem` | Notify interested parties (user, admin) on reservation events |
+| **Singleton** | `RentalSystem.get_instance()` | Single global entry point; prevents multiple inconsistent system instances |
 
-Safety Features:
+---
 
-• Reservation conflicts are prevented through proper availability tracking.
+## Class Overview
 
-• User authentication ensures secure access to the system.
+```
+VehicleType (Enum)          VehicleStatus (Enum)        ReservationStatus (Enum)
+    │                            │                            │
+    ▼                            ▼                            ▼
+Vehicle (ABC)  ◄── EconomyVehicle / LuxuryVehicle / Bike
+    │  - isAvailable(startDate, endDate)
+    │  - calculateRent(days)  [abstract]
+    │
+    ├── reservations: List[Reservation]
+    │
+Reservation
+    │  - overlaps(startDate, endDate)
+    │
+RentalStore
+    │  - vehicles[]
+    │  - getAvailableVehicles / addVehicle / removeVehicle
+    │
+ReservationManager
+    │  - makeReservation(user, vehicle, startDate, endDate)
+    │
+PaymentStrategy (ABC) ◄── CashPayment / CardPayment
+    │
+PaymentProcessor  ─── uses strategy at runtime
+    │
+Observer (ABC) ◄── UserObserver
+    │
+RentalSystem  ─── orchestrates stores, factory, reservations, payments, observers
+```
 
-• Audit trails track all rental transactions and vehicle status changes.
+---
 
-• Damage reports and vehicle condition monitoring ensure fleet maintenance.
+## How to Walk Through in the Interview
 
-
-Candidate Understanding during interview: 
-Certainly! Here's my understanding of the Car Rental System:
-
-• The system will manage multiple vehicles across different rental locations.
-
-• Users can search, filter, and reserve vehicles based on their preferences.
-
-• The system tracks vehicle availability and prevents booking conflicts.
-
-• Billing and payment processing are integrated for a complete rental cycle.
-
-• The system should be scalable to handle operations across multiple cities.
+1. **Clarify** scope (2 min) — confirm multi-store, date-range booking, payment methods.
+2. **Identify** classes & relationships top-down (3 min) — draw the class overview above.
+3. **Code** core classes in order (35 min):
+   - Enums → Vehicle hierarchy → Reservation → RentalStore → ReservationManager → Payment (Strategy) → Observer → RentalSystem
+4. **Mention** TODO features verbally (2 min) — shows breadth of thinking.
+5. **Dry-run** a booking flow end-to-end (3 min).
