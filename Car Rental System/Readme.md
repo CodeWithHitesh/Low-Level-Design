@@ -25,17 +25,17 @@
 | 1 | Vehicle hierarchy with type-based pricing | `Vehicle` (ABC), `EconomyVehicle`, `LuxuryVehicle`, `Bike` — **Inheritance** |
 | 2 | Availability check (date-overlap + maintenance) | `Vehicle.isAvailable()`, `Reservation.overlaps()` |
 | 3 | Rental store inventory management | `RentalStore` — add / remove / list available vehicles |
-| 4 | Reservation creation with conflict prevention | `ReservationManager` — validates availability before booking |
-| 5 | Payment processing with multiple methods | `PaymentStrategy` (ABC), `CashPayment`, `CardPayment` — **Strategy Pattern** |
-| 6 | Vehicle creation without exposing concrete classes | `VehicleFactory` — **Factory Pattern** |
-| 7 | Notification on booking events | `Observer` (ABC), `UserObserver` — **Observer Pattern** |
+| 4 | Reservation creation with conflict prevention | `ReservationManager.makeReservation()` — per-vehicle lock prevents double-booking |
+| 5 | Cancel reservation | `ReservationManager.cancelReservation()` — validates confirmed status before cancelling |
+| 6 | Payment processing with multiple methods | `PaymentStrategy` (ABC), `CashPayment`, `CardPayment` — **Strategy Pattern** |
+| 7 | Vehicle creation without exposing concrete classes | `VehicleFactory` — **Factory Pattern** |
+| 8 | Notification on booking events | `Observer` (ABC), `UserObserver` — **Observer Pattern** |
+| 9 | Thread safety — prevent double-booking | Per-vehicle `threading.Lock` in `makeReservation` and `cancelReservation`; separate ID lock in `ReservationManager`; double-checked locking for Singleton |
 
 ### TODO Features (out of scope — mention to interviewer but don't code)
 
 - **TODO:** Search vehicles across multiple stores by city, vehicle type, date range
-- **TODO:** Cancel reservation with refund logic
 - **TODO:** Modify reservation (reschedule to new dates)
-- **TODO:** Add locking per vehicle in `makeReservation` for thread-safety under concurrent requests
 
 ---
 
@@ -46,7 +46,7 @@
 | **Strategy** | `PaymentProcessor` + `PaymentStrategy` | Swap payment methods at runtime without changing processor logic |
 | **Factory** | `VehicleFactory.create_vehicle()` | Decouple vehicle creation from client code; easy to add new types |
 | **Observer** | `Observer` / `UserObserver` on `RentalSystem` | Notify interested parties (user, admin) on reservation events |
-| **Singleton** | `RentalSystem.get_instance()` | Single global entry point; prevents multiple inconsistent system instances |
+| **Singleton** | `RentalSystem.get_instance()` | Single global entry point; prevents multiple inconsistent system instances. Double-checked locking makes it thread-safe |
 
 ---
 
@@ -59,6 +59,7 @@ VehicleType (Enum)          VehicleStatus (Enum)        ReservationStatus (Enum)
 Vehicle (ABC)  ◄── EconomyVehicle / LuxuryVehicle / Bike
     │  - isAvailable(startDate, endDate)
     │  - calculateRent(days)  [abstract]
+    │  - _lock: threading.Lock  [per-vehicle, prevents double-booking]
     │
     ├── reservations: List[Reservation]
     │
@@ -70,7 +71,9 @@ RentalStore
     │  - getAvailableVehicles / addVehicle / removeVehicle
     │
 ReservationManager
-    │  - makeReservation(user, vehicle, startDate, endDate)
+    │  - makeReservation(user, vehicle, startDate, endDate)  [acquires vehicle._lock]
+    │  - cancelReservation(reservation)  [acquires vehicle._lock]
+    │  - _id_lock: threading.Lock  [protects next_id]
     │
 PaymentStrategy (ABC) ◄── CashPayment / CardPayment
     │
@@ -79,6 +82,9 @@ PaymentProcessor  ─── uses strategy at runtime
 Observer (ABC) ◄── UserObserver
     │
 RentalSystem  ─── orchestrates stores, factory, reservations, payments, observers
+    │  - get_instance()  [double-checked locking for thread-safe singleton]
+    │  - bookVehicle(user, storeId, registrationNum, startDate, endDate, paymentStrategy)
+    │  - cancelReservation(reservation)
 ```
 
 ---

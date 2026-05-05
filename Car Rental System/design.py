@@ -3,6 +3,7 @@ from datetime import date
 from enum import Enum
 from typing import List
 from abc import ABC, abstractmethod
+import threading
 
 
 class VehicleType(Enum):
@@ -50,7 +51,8 @@ class Vehicle(ABC):
     type: VehicleType
     baseRentalPrice: float 
     reservations: List['Reservation'] = field(default_factory=list)
-    maintenanceStatus: VehicleStatus = field(default=VehicleStatus.Available)
+    status: VehicleStatus = field(default=VehicleStatus.Available)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @abstractmethod
     def calculateRent(self, days):
@@ -58,7 +60,7 @@ class Vehicle(ABC):
 
     def isAvailable(self, startDate, endDate):
         
-        if self.maintenanceStatus == VehicleStatus.Maintenance:
+        if self.status == VehicleStatus.Maintenance:
             return False
 
         for reservation in self.reservations:
@@ -125,8 +127,7 @@ class RentalStore:
         return 
     
     def removeVehicle(self, registrationNum: str):
-        
-        for vehicle in self.vehicles:
+        for vehicle in list(self.vehicles):
             if vehicle.registrationNumber == registrationNum:
                 self.vehicles.remove(vehicle)
                 print(f"Vehicle with {registrationNum} removed!")
@@ -165,14 +166,24 @@ class VehicleFactory:
 @dataclass
 class ReservationManager:
     next_id: int = field(default=1)
+    _id_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def makeReservation(self, user: User, vehicle: Vehicle, startDate: date, endDate: date):
-        if not vehicle.isAvailable(startDate, endDate):
-            raise ValueError("Vehicle not available for requested dates")
-        reservation = Reservation(self.next_id, vehicle, startDate, endDate, ReservationStatus.confirmed, user) 
-        self.next_id += 1
-        vehicle.reservations.append(reservation)
+        with vehicle._lock:
+            if not vehicle.isAvailable(startDate, endDate):
+                raise ValueError("Vehicle not available for requested dates")
+            with self._id_lock:
+                reservation_id = self.next_id
+                self.next_id += 1
+            reservation = Reservation(reservation_id, vehicle, startDate, endDate, ReservationStatus.confirmed, user)
+            vehicle.reservations.append(reservation)
         return reservation
+
+    def cancelReservation(self, reservation: 'Reservation'):
+        with reservation.vehicle._lock:
+            if reservation.status != ReservationStatus.confirmed:
+                raise ValueError("Only confirmed reservations can be cancelled")
+            reservation.status = ReservationStatus.cancelled
 
 
 class PaymentStrategy(ABC):
@@ -201,6 +212,7 @@ class PaymentProcessor:
 # Singleton Pattern
 class RentalSystem:
     _instance = None
+    _instance_lock = threading.Lock()
 
     def __init__(self, rentalStores: List[RentalStore], vehicleFactory: VehicleFactory,
                  reservationManager: ReservationManager, paymentProcessor: PaymentProcessor):
@@ -216,7 +228,9 @@ class RentalSystem:
     def get_instance(cls, rentalStores: List[RentalStore], vehicleFactory: VehicleFactory,
                      reservationManager: ReservationManager, paymentProcessor: PaymentProcessor):
         if cls._instance is None:
-            cls._instance = cls(rentalStores, vehicleFactory, reservationManager, paymentProcessor)
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = cls(rentalStores, vehicleFactory, reservationManager, paymentProcessor)
         return cls._instance
 
     def addObserver(self, observer: Observer):
@@ -226,19 +240,23 @@ class RentalSystem:
         for observer in self.observers:
             observer.notify(message)
 
-    def bookVehicle(self, user: User, store: RentalStore, registrationNum: str,
+    def bookVehicle(self, user: User, storeId: int, registrationNum: str,
                     startDate: date, endDate: date, paymentStrategy: PaymentStrategy):
+        store = next((s for s in self.rentalStores if s.id == storeId), None)
+        if not store:
+            raise ValueError(f"Store with id {storeId} not found")
         for vehicle in store.vehicles:
             if vehicle.registrationNumber == registrationNum:
                 reservation = self.reservationManager.makeReservation(user, vehicle, startDate, endDate)
-                days = (endDate - startDate).days
+                days = (endDate - startDate).days + 1
                 amount = vehicle.calculateRent(days)
                 self.paymentProcessor.processPayment(paymentStrategy, amount)
                 self.notifyObservers(f"Reservation {reservation.id} confirmed for {user.name}")
                 return reservation
         raise ValueError(f"Vehicle {registrationNum} not found in store {store.name}")
 
-    # TODO: searchVehicles(city, vehicleType, startDate, endDate) — search across stores
-    # TODO: cancelReservation(reservationId) — cancel + refund logic
+    def cancelReservation(self, reservation: Reservation):
+        self.reservationManager.cancelReservation(reservation)
+        self.notifyObservers(f"Reservation {reservation.id} has been cancelled")
+
     # TODO: modifyReservation(reservationId, newDates) — reschedule
-    # TODO: Add locking per vehicle in makeReservation for thread-safety under concurrent requests
