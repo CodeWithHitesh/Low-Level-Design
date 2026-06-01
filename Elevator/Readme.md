@@ -89,3 +89,12 @@ Building
    - Enums → Floor → ElevatorRequest → ElevatorObserver + DisplayObserver → Elevator → SchedulingStrategy + FCFSStrategy → ElevatorController → Building
 4. **Mention** TODO features verbally (2 min) — SCAN algorithm, weight limits, door timeout, concurrency.
 5. **Dry-run** a request flow (3 min) — user on floor 3 presses UP → controller picks elevator → elevator moves → observer notifies display.
+
+---
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `design.py` | Interview-scoped implementation (core classes + patterns) |
+| `real-design.py` | Extended implementation with more complete elevator logic |
