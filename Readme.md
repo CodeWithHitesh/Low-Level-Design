@@ -18,6 +18,7 @@ A collection of classic LLD problems solved in Python, scoped for a **45-minute 
 | 8 | [Rate Limiter](Rate%20Limiter/) | Strategy, Factory |
 | 9 | [Splitwise](Splitwise/) | Strategy, Factory, Observer |
 | 10 | [Web Socket](Web%20Socket/) | *(System Design concept — async I/O demo)* |
+| 11 | [Resource Lease System](Resource%20Lease%20System/) | FIFO Deque, Lazy Deletion, Thread Safety |
 
 ---
 
@@ -40,6 +41,8 @@ A collection of classic LLD problems solved in Python, scoped for a **45-minute 
 | **Template Method** | Piece movement validation (Chess), snake move handling (Snake) |
 | **Composite** | File/Directory hierarchy (File System) |
 | **Command** | Elevator requests (Elevator) |
+| **FIFO Deque + Lazy Deletion** | O(1) amortised token expiry (Resource Lease System) |
+| **Threading Lock** | Thread-safe token grant / release (Resource Lease System, Rate Limiter) |
 
 ---
 
