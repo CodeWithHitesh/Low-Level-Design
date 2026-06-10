@@ -54,6 +54,20 @@ grant at t=11  → expires at t=11+3600
 
 Every new grant *always* expires after all existing ones. Insertion order == expiration order, so a plain FIFO `deque` achieves O(1) append and O(1) popleft — no heap needed.
 
+### Why `_process_expirations()` is called inside `release_tokens()`
+
+This is not about token accounting — tokens are restored correctly either way. It is about **semantic correctness**.
+
+Without the call, a grant that has already expired could still be found in `_active_grants` (because expiry is lazy). The caller would "release" a logically dead grant, which is wrong — the system would appear to accept a no-op as a valid operation and restore tokens that have already been reclaimed.
+
+With the call, expired grants are reclaimed first. If the target grant has expired, the dict lookup returns `None` and `InvalidGrantError` is raised — the correct outcome.
+
+```
+_process_expirations()  ← run first; removes logically dead grants
+dict lookup             ← if grant gone (expired), raise InvalidGrantError
+                          if grant alive (not yet expired), proceed with release
+```
+
 ### Lazy Deletion for Early Returns
 
 Searching and removing a node from the middle of a deque is O(n). Instead:
@@ -99,11 +113,10 @@ Custom exceptions allow callers to handle each failure mode independently withou
 
 ```
 Grant (dataclass)
-    │  - grant_id: str           (UUID)
+    │  - grant_id: int            (incrementing counter)
     │  - user_id: str
     │  - token_count: int
     │  - expiry_timestamp: float (monotonic clock)
-    │  + is_expired(now?) → bool
 
 ResourceLeaseSystem
     │  - _total_tokens: int
@@ -116,7 +129,7 @@ ResourceLeaseSystem
     ├── request_tokens(user_id, n) → grant_id
     │       _process_expirations()
     │       check _available_tokens ≥ n  → raises InsufficientTokensError
-    │       uuid4 → Grant → deque.append + dict insert
+    │       increment counter → Grant → deque.append + dict insert
     │
     ├── release_tokens(user_id, grant_id) → None
     │       _process_expirations()
@@ -135,6 +148,63 @@ ResourceLeaseSystem
 
 ---
 
+## Edge Cases & Validation
+
+### `release_tokens` — information hiding in `InvalidGrantError`
+
+Two distinct failure modes exist:
+- `grant_id` does not exist in `_active_grants`
+- `grant_id` exists but belongs to a different user
+
+Both raise **the same `InvalidGrantError` with the same message** intentionally. If the two cases were distinguished (e.g., `GrantNotFoundError` vs `UnauthorizedReleaseError`), a caller could probe whether a `grant_id` is valid but owned by someone else — an information-leakage risk in a multi-tenant system.
+
+The rule: **never confirm the existence of a resource to a caller who doesn't own it.**
+
+### `grant_id` — incrementing counter vs UUID
+
+The current implementation uses a simple incrementing counter (`grant-1`, `grant-2`, …) instead of `uuid.uuid4()`.
+
+**Why UUID is strictly safer:**  
+UUIDs are unpredictable (122 bits of entropy), so a caller cannot enumerate other users' grant IDs even if they know the scheme. A counter is sequential and trivially guessable, making it an **IDOR (Insecure Direct Object Reference)** risk in public-facing APIs.
+
+**Why the counter is acceptable here:**  
+The second argument to `release_tokens` is `user_id`, and the code checks `grant.user_id != user_id` before acting. Both "grant not found" and "wrong owner" collapse into the same `InvalidGrantError`, so even if an attacker guesses a valid `grant_id`, they cannot release it without also knowing the correct `user_id`. The `user_id` check is the compensating control that neutralises the IDOR risk.
+
+**Summary:**
+
+| ID scheme | IDOR risk | Thread-safe? | Readable in logs |
+|-----------|-----------|--------------|------------------|
+| UUID | None | Yes (no shared state) | Hard |
+| Counter (`int`) | Mitigated by `user_id` check | Yes (incremented under lock) | Easy |
+
+For a real production API, prefer UUID. For an in-memory interview solution, the counter is simpler to reason about and safe given the existing ownership check.
+
+---
+
+### `__init__` — pool configuration
+
+| Input | Behaviour |
+|---|---|
+| `total_tokens <= 0` | `ValueError` — a pool of zero or negative tokens is nonsensical |
+| `lease_duration_sec <= 0` | `ValueError` — a non-positive duration would expire grants instantly or invert ordering |
+
+### `request_tokens` — token count `n`
+
+| Input | Behaviour |
+|---|---|
+| `n <= 0` | `ValueError` raised **before** acquiring the lock — no wasted contention |
+| `n > available` | `InsufficientTokensError` (existing) |
+
+The `n <= 0` check is done outside the lock intentionally. It is a pure input validation that requires no shared state — holding the lock while checking it would unnecessarily block other threads.
+
+### `Grant` — why not `frozen=True`?
+
+`Grant` is left mutable on purpose. The planned **lease renewal** TODO requires updating `expiry_timestamp` in-place on an existing grant. A `frozen=True` dataclass would force deleting and recreating the grant object, which complicates both the dict and the deque (the deque holds a reference; a new object would create a stale ghost immediately).
+
+If lease renewal is never implemented, converting to `frozen=True` is a safe and recommended improvement — it prevents accidental mutation of grant data.
+
+---
+
 ## Complexity Summary
 
 | Operation | Time | Space |
@@ -149,6 +219,40 @@ ResourceLeaseSystem
 ## Extensibility (Verbal Discussion Points)
 
 - **Variable lease durations** → the constant-duration assumption breaks; a **Min-Heap** keyed on `expiry_timestamp` replaces the deque (O(log n) per operation).
+
+  `heapq` compares heap elements directly, so `Grant` needs a `__lt__` method; otherwise pushing two `Grant` objects raises `TypeError`.
+
+  ```python
+  import heapq
+
+  @dataclass
+  class Grant:
+      grant_id: int
+      user_id: str
+      token_count: int
+      expiry_timestamp: float
+
+      def __lt__(self, other: "Grant") -> bool:
+          # Min-heap orders by soonest expiry first
+          return self.expiry_timestamp < other.expiry_timestamp
+
+  # In ResourceLeaseSystem.__init__:
+  self._expiry_heap: list[Grant] = []   # heapq min-heap; replaces _expiry_queue
+
+  # In request_tokens (variable duration passed as argument):
+  grant = Grant(grant_id=..., user_id=..., token_count=n,
+                expiry_timestamp=time.monotonic() + lease_duration_sec)
+  heapq.heappush(self._expiry_heap, grant)
+
+  # In _process_expirations:
+  while self._expiry_heap and self._expiry_heap[0].expiry_timestamp <= now:
+      front = heapq.heappop(self._expiry_heap)
+      if front.grant_id in self._active_grants:
+          self._available_tokens += front.token_count
+          del self._active_grants[front.grant_id]
+  ```
+
+  The constant-duration deque stays O(1) because insertion order == expiry order. The heap is only needed when different grants can have different durations.
 - **Distributed pool** → replace the in-process lock with a Redis `DECRBY` + `EXPIRE` or a distributed lease via `SETNX`.
 - **Lease renewal** → update `expiry_timestamp` in the dict and append a new entry to the deque; the old entry becomes a ghost — lazy deletion handles it automatically.
 - **Waitlist** → use a `threading.Condition` instead of a bare `Lock`; waiting threads call `condition.wait()` and are notified by `release_tokens`.
