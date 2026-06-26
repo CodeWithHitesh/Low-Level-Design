@@ -1,9 +1,15 @@
-from enum import Enum
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import List, Deque
-from collections import deque
+"""Elevator System implementation."""
 
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from collections import deque
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Deque, List
+
+
+# ─── Enums ────────────────────────────────────────────────────
 
 class Direction(Enum):
     IDLE = 'IDLE'
@@ -17,20 +23,45 @@ class State(Enum):
     MAINTENANCE = 'MAINTENANCE'
 
 
+# ─── Dataclass Models ─────────────────────────────────────────
+
 @dataclass
 class Floor:
-    floorNum: int 
+    floor_num: int
 
 
-# STRATEGY PATTERN 
+# ─── Observer (ABC) ───────────────────────────────────────────
+
+class ElevatorObserver(ABC):
+    @abstractmethod
+    def onFloorChange(self, floor: Floor, elevator: Elevator) -> None:
+        pass
+
+    @abstractmethod
+    def onStateChange(self, state: State, elevator: Elevator) -> None:
+        pass
+
+
+class DisplayObserver(ElevatorObserver):
+    def onFloorChange(self, floor: Floor, elevator: Elevator) -> None:
+        print(f"Floor changed to {floor.floor_num} for elevator {elevator.id}")
+
+    def onStateChange(self, state: State, elevator: Elevator) -> None:
+        print(f"State changed to {state.value} for elevator {elevator.id}")
+
+
+# ─── Strategy Pattern (Scheduling) ───────────────────────────
+
 class SchedulingStrategy(ABC):
     @abstractmethod
-    def get_next_floor(self, elevator: Elevator) -> Floor:
+    def getNextFloor(self, elevator: Elevator) -> Floor:
         pass
 
 
 class FCFSStrategy(SchedulingStrategy):
-    def get_next_floor(self, elevator: Elevator):
+    """First-Come-First-Served: serve requests in arrival order."""
+
+    def getNextFloor(self, elevator: Elevator) -> Floor:
         requests = elevator.requests
         if requests:
             return requests[0].floor
@@ -38,99 +69,103 @@ class FCFSStrategy(SchedulingStrategy):
 
 
 class ScanStrategy(SchedulingStrategy):
-    # Iterate in one direction till all requests are over
-    def getClosestUpAndDownFloors(self, requests, currentFloor: Floor):
-        currentFloorNum = currentFloor.floorNum
-        closestUpFloor = Floor(currentFloorNum)
-        closestDownFloor = Floor(currentFloorNum)
+    """Scan (elevator algorithm): serve closest in current direction, then reverse."""
+
+    def getClosestUpAndDownFloors(self, requests: Deque[ElevatorRequest],
+                                  current_floor: Floor) -> tuple:
+        current_num = current_floor.floor_num
+        closest_up = Floor(current_num)
+        closest_down = Floor(current_num)
 
         for request in requests:
-            floor_num = request.floor.floorNum
-            
-            if floor_num > currentFloorNum:
-                if closestUpFloor.floorNum == currentFloorNum or floor_num < closestUpFloor.floorNum:
-                    closestUpFloor = Floor(floor_num)
-            elif floor_num < currentFloorNum:
-                if closestDownFloor.floorNum == currentFloorNum or floor_num > closestDownFloor.floorNum:
-                    closestDownFloor = Floor(floor_num)
-        
-        return (closestDownFloor, closestUpFloor)
+            floor_num = request.floor.floor_num
 
-    def get_next_floor(self, elevator: Elevator) -> Floor:
-        
-        currentFloor = elevator.floor
-        currentFloorNum = currentFloor.floorNum
-        currentDirection = elevator.direction
-        currentState = elevator.state
+            if floor_num > current_num:
+                if closest_up.floor_num == current_num or floor_num < closest_up.floor_num:
+                    closest_up = Floor(floor_num)
+            elif floor_num < current_num:
+                if closest_down.floor_num == current_num or floor_num > closest_down.floor_num:
+                    closest_down = Floor(floor_num)
+
+        return (closest_down, closest_up)
+
+    def getNextFloor(self, elevator: Elevator) -> Floor:
+        current_floor = elevator.floor
+        current_num = current_floor.floor_num
+        current_direction = elevator.direction
+        current_state = elevator.state
         requests = elevator.requests
 
         if not len(requests):
-            return currentFloor
-        
-        closestDownFloor, closestUpFloor = self.getClosestUpAndDownFloors(requests, currentFloor)
+            return current_floor
 
-        if currentState == State.IDLE:
-            if closestUpFloor.floorNum == currentFloorNum:
-                nextFloor = closestDownFloor
-            elif closestDownFloor.floorNum == currentFloorNum:
-                nextFloor = closestUpFloor
+        closest_down, closest_up = self.getClosestUpAndDownFloors(requests, current_floor)
+
+        if current_state == State.IDLE:
+            if closest_up.floor_num == current_num:
+                next_floor = closest_down
+            elif closest_down.floor_num == current_num:
+                next_floor = closest_up
             else:
-                up_dist = closestUpFloor.floorNum - currentFloorNum
-                down_dist = currentFloorNum - closestDownFloor.floorNum
-                nextFloor = closestUpFloor if up_dist < down_dist else closestDownFloor
-        elif currentDirection == Direction.UP:
-            nextFloor = closestUpFloor if closestUpFloor.floorNum != currentFloorNum else closestDownFloor
-        else:  # DOWN
-            nextFloor = closestDownFloor if closestDownFloor.floorNum != currentFloorNum else closestUpFloor
+                up_dist = closest_up.floor_num - current_num
+                down_dist = current_num - closest_down.floor_num
+                next_floor = closest_up if up_dist < down_dist else closest_down
+        elif current_direction == Direction.UP:
+            next_floor = closest_up if closest_up.floor_num != current_num else closest_down
+        else:
+            next_floor = closest_down if closest_down.floor_num != current_num else closest_up
 
-        return nextFloor
+        return next_floor
 
 
 class LookStrategy(SchedulingStrategy):
-    def get_next_floor(self, elevator: Elevator) -> Floor:
-        requests = elevator.requests
+    """Look algorithm: like Scan but only goes as far as the last request."""
 
-        currentFloor = elevator.floor
-        currentFloorNum = currentFloor.floorNum
+    def getNextFloor(self, elevator: Elevator) -> Floor:
+        requests = elevator.requests
+        current_floor = elevator.floor
+        current_num = current_floor.floor_num
 
         if not len(requests):
-            return currentFloor
+            return current_floor
 
-        targetFloor = requests[0].floor
-        targetFloorNum = targetFloor.floorNum
+        target_floor = requests[0].floor
+        target_num = target_floor.floor_num
 
-        if targetFloorNum == currentFloorNum:
-            return currentFloor
-        
-        candidate = targetFloor
-        direction = Direction.UP if targetFloorNum > currentFloorNum else Direction.DOWN
+        if target_num == current_num:
+            return current_floor
+
+        candidate = target_floor
+        direction = Direction.UP if target_num > current_num else Direction.DOWN
 
         for request in requests:
-            reqFloor = request.floor
-            if direction == Direction.UP and currentFloorNum < reqFloor.floorNum < targetFloorNum:
+            req_floor = request.floor
+            if direction == Direction.UP and current_num < req_floor.floor_num < target_num:
                 if request.isInternalRequest() or (isinstance(request, ExternalElevatorRequest) and request.direction == direction):
-                    if reqFloor.floorNum < candidate.floorNum:
-                        candidate = reqFloor
-            elif direction == Direction.DOWN and targetFloorNum < reqFloor.floorNum < currentFloorNum:
+                    if req_floor.floor_num < candidate.floor_num:
+                        candidate = req_floor
+            elif direction == Direction.DOWN and target_num < req_floor.floor_num < current_num:
                 if request.isInternalRequest() or (isinstance(request, ExternalElevatorRequest) and request.direction == direction):
-                    if reqFloor.floorNum > candidate.floorNum:
-                        candidate = reqFloor
+                    if req_floor.floor_num > candidate.floor_num:
+                        candidate = req_floor
 
         return candidate
 
 
-# COMMAND PATTERN
+# ─── Command Pattern (Requests) ───────────────────────────────
+
 class ElevatorCommand(ABC):
     @abstractmethod
-    def execute(self):
+    def execute(self) -> None:
         pass
 
 
 @dataclass
 class ElevatorRequest(ElevatorCommand):
+    """Base request command with a target floor."""
     controller: ElevatorController
     floor: Floor
-    elevatorId: int
+    elevator_id: int
 
     @abstractmethod
     def isInternalRequest(self) -> bool:
@@ -139,112 +174,115 @@ class ElevatorRequest(ElevatorCommand):
 
 @dataclass
 class InternalElevatorRequest(ElevatorRequest):
+    """Request from inside the elevator (passenger presses a floor button)."""
 
-    def execute(self):
-        return self.controller.requestFloor(self.elevatorId, self.floor)
-    
-    def isInternalRequest(self):
-        return True 
+    def execute(self) -> None:
+        self.controller.requestFloor(self.elevator_id, self.floor)
+
+    def isInternalRequest(self) -> bool:
+        return True
 
 
 @dataclass
 class ExternalElevatorRequest(ElevatorRequest):
-    direction: Direction
+    """Request from a floor (passenger calls the elevator)."""
+    direction: Direction = field(default=Direction.UP)
 
-    def execute(self):
-        return self.controller.requestElevator(self.elevatorId, self.direction, self.floor)
+    def execute(self) -> None:
+        self.controller.requestElevator(self.elevator_id, self.direction, self.floor)
 
     def isInternalRequest(self) -> bool:
-        return False 
+        return False
 
+
+# ─── Elevator & Controller ────────────────────────────────────
 
 @dataclass
 class Elevator:
-    id: int 
-    floor: Floor  = field(default_factory=lambda: Floor(0))
+    """Represents a single elevator car with requests and observers."""
+    id: int
+    floor: Floor = field(default_factory=lambda: Floor(0))
     direction: Direction = field(default=Direction.IDLE)
     state: State = field(default=State.IDLE)
     requests: Deque[ElevatorRequest] = field(default_factory=deque)
     observers: List[ElevatorObserver] = field(default_factory=list)
 
-    def moveToNextFloor(self, nextFloor: Floor):
-        self.direction = Direction.UP if nextFloor.floorNum > self.floor.floorNum else Direction.DOWN
-        self.floor = nextFloor
+    def moveToNextFloor(self, next_floor: Floor) -> None:
+        self.direction = Direction.UP if next_floor.floor_num > self.floor.floor_num else Direction.DOWN
+        self.floor = next_floor
         self.state = State.MOVING
-        self.requests = deque(req for req in self.requests if req.floor != nextFloor)
+        self.requests = deque(req for req in self.requests if req.floor != next_floor)
         self.notifyObserversOnFloorChange(self.floor)
 
-    def notifyObserversOnFloorChange(self, floor):
+    def notifyObserversOnFloorChange(self, floor: Floor) -> None:
         for observer in self.observers:
             observer.onFloorChange(floor, self)
-    
-    def notifyObserversOnStateChange(self, state):
+
+    def notifyObserversOnStateChange(self, state: State) -> None:
         for observer in self.observers:
             observer.onStateChange(state, self)
 
 
 @dataclass
 class ElevatorController:
+    """Orchestrates multiple elevators using a scheduling strategy."""
     floors: List[Floor]
     strategy: SchedulingStrategy
     elevators: List[Elevator] = field(default_factory=list)
 
-    def requestFloor(self, elevatorId: int,  floor: Floor):
-        elevator = self.getElevatorById(elevatorId)
+    def requestFloor(self, elevator_id: int, floor: Floor) -> None:
+        elevator = self.getElevatorById(elevator_id)
         if elevator:
-            elevator.requests.append(InternalElevatorRequest(self, floor, elevatorId))
+            elevator.requests.append(InternalElevatorRequest(self, floor, elevator_id))
 
-    def requestElevator(self, elevatorId: int, direction: Direction, floor: Floor):
-        elevator = self.getElevatorById(elevatorId)
+    def requestElevator(self, elevator_id: int, direction: Direction, floor: Floor) -> None:
+        elevator = self.getElevatorById(elevator_id)
         if elevator:
-            elevator.requests.append(ExternalElevatorRequest(self, floor, elevatorId, direction))
+            elevator.requests.append(ExternalElevatorRequest(self, floor, elevator_id, direction))
 
-    def getElevatorById(self, elevatorId: int):
-
+    def getElevatorById(self, elevator_id: int) -> Elevator:
         for elevator in self.elevators:
-            if elevator.id == elevatorId:
+            if elevator.id == elevator_id:
                 return elevator
-        
-        return None 
+        return None
 
-    # Perform a simulation step by moving all elevators
-    def step(self):
-
+    def step(self) -> None:
+        """Perform one simulation step: move all elevators with pending requests."""
         for elevator in self.elevators:
             if len(elevator.requests) > 0:
-                nextFloor = self.strategy.get_next_floor(elevator)
-                elevator.moveToNextFloor(nextFloor)
+                next_floor = self.strategy.getNextFloor(elevator)
+                elevator.moveToNextFloor(next_floor)
 
 
-class ElevatorObserver(ABC):
-    def __init__(self):
-        pass
-
-    @abstractmethod
-    def onFloorChange(self, floor, elevator):
-        pass
-
-    @abstractmethod
-    def onStateChange(self, state, elevator):
-        pass
-
-
-class DisplayObserver(ElevatorObserver):
-    def onFloorChange(self, floor, elevator):
-        print(f"Floor changed to {floor} for elevator with id: {elevator.id}")
-    
-    def onStateChange(self, state, elevator):
-        print(f"State changed to {state} for elevator with id: {elevator.id}")
-
+# ─── Building Model ───────────────────────────────────────────
 
 @dataclass
 class Building:
-    id: int 
-    name: str 
-    numOfFloor: int 
+    id: int
+    name: str
+    num_of_floors: int
 
 
 @dataclass
 class BuildingController:
     building: Building
-    elevatorController: ElevatorController
+    elevator_controller: ElevatorController
+
+
+# ─── Demo ─────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    floors = [Floor(i) for i in range(10)]
+    strategy = ScanStrategy()
+
+    elevator1 = Elevator(id=1, observers=[DisplayObserver()])
+    elevator2 = Elevator(id=2, observers=[DisplayObserver()])
+
+    controller = ElevatorController(floors=floors, strategy=strategy, elevators=[elevator1, elevator2])
+
+    controller.requestFloor(1, Floor(5))
+    controller.requestFloor(1, Floor(3))
+    controller.requestElevator(2, Direction.UP, Floor(7))
+
+    for _ in range(3):
+        controller.step()

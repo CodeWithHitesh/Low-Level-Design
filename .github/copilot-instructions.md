@@ -17,7 +17,7 @@ Never modify files outside the target problem's folder. `temp.py` at the root is
 **File layout (top to bottom):**
 1. Module docstring — names the design patterns and SOLID principles used
 2. Imports — `abc`, `dataclasses`, `enum`, `typing`, then `collections` / `threading` / `time` if needed
-3. Custom exceptions (if any) — inherit from a domain base exception
+3. Custom exceptions (if any) — optional; `ValueError` is sufficient for most interview rounds
 4. Enums
 5. Abstract base classes (ABCs)
 6. Concrete implementations
@@ -33,7 +33,7 @@ Never modify files outside the target problem's folder. `temp.py` at the root is
 - `@dataclass` for all data models; use `field(default_factory=...)` for mutable defaults
 - Thread safety via per-entity `threading.Lock`; prefer `defaultdict(threading.Lock)` over a single global lock
 - No `frozen=True` on dataclasses that have planned mutation (e.g., lease renewal, state updates)
-- Raise `ValueError` for invalid constructor arguments; raise domain-specific exceptions for business rule violations
+- Raise `ValueError` for invalid constructor arguments and business rule violations
 
 ## Readme.md Conventions
 
@@ -55,8 +55,7 @@ Every Readme must contain these sections in order — see [Resource Lease System
 - **Validate inputs before acquiring any lock** — pure input validation needs no shared state; holding a lock for it wastes contention.
 - **Prefer composition over deep inheritance** — use `List[Type]` containment and strategy objects rather than multi-level ABC trees.
 - **Justify every data structure choice** — document why (e.g., deque vs heap, dict vs list) with explicit trade-offs in the Readme.
-- **Raise domain-specific exceptions for business rule violations** — do not let `ValueError` or `KeyError` leak out of the public API.
-- **Collapse ambiguous error cases into one exception** — do not expose internal state (e.g., "not found" vs "not owned") through different error types; leaking existence is an information-leakage risk in multi-tenant systems.
+- **Collapse ambiguous error cases into one `ValueError`** — do not expose internal state (e.g., "not found" vs "not owned") through different error types.
 - **Thread safety is per-entity** — use `defaultdict(threading.Lock)` rather than a single global lock to reduce contention.
 - **No `frozen=True` on dataclasses that have planned mutation** — document the reason in the class docstring when omitting it.
 

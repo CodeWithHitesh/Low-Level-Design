@@ -17,8 +17,7 @@ A collection of classic LLD problems solved in Python, scoped for a **45-minute 
 | 7 | [File System](File%20System/) | Composite, Singleton |
 | 8 | [Rate Limiter](Rate%20Limiter/) | Strategy, Factory |
 | 9 | [Splitwise](Splitwise/) | Strategy, Factory, Observer |
-| 10 | [Web Socket](Web%20Socket/) | *(System Design concept — async I/O demo)* |
-| 11 | [Resource Lease System](Resource%20Lease%20System/) | FIFO Deque, Lazy Deletion, Thread Safety |
+| 10 | [Resource Lease System](Resource%20Lease%20System/) | FIFO Deque, Lazy Deletion, Thread Safety |
 
 ---
 

@@ -1,6 +1,8 @@
-from dataclasses import dataclass, field
+"""Splitwise implementation."""
+
 from abc import ABC, abstractmethod
-from typing import List, Dict
+from dataclasses import dataclass, field
+from typing import Dict, List
 
 
 @dataclass
@@ -12,54 +14,58 @@ class User:
 
 @dataclass
 class UserManager:
+    """Registry of all users in the system."""
     users: Dict[int, User] = field(default_factory=dict)
-    
-    # To-do : Add singleton pattern so only instance of usermanager exists
 
-    def getUser(self, id):
+    def getUser(self, id: int) -> User:
         if not self.users.get(id):
-            raise Exception("Invalid user id!")
+            raise ValueError(f"User with id {id} not found")
         return self.users.get(id)
 
 
 class Split(ABC):
     @abstractmethod
-    def split(self, amount: float, participants: List[User], splitDetails: Dict[int, float]) -> Dict[int, float]:
-        pass 
+    def split(self, amount: float, participants: List[User],
+              split_details: Dict[int, float]) -> Dict[int, float]:
+        pass
 
 
 class EqualSplit(Split):
-    def split(self, amount: float, participants: List[User], splitDetails: Dict[int, float]):
-        totalSplitShare = dict()
-        numOfParticipants = len(participants)
+    def split(self, amount: float, participants: List[User],
+              split_details: Dict[int, float]) -> Dict[int, float]:
+        total_split_share = dict()
+        num_of_participants = len(participants)
 
         for participant in participants:
-            splitShare = amount / numOfParticipants
-            totalSplitShare[participant.id] = splitShare
+            split_share = amount / num_of_participants
+            total_split_share[participant.id] = split_share
 
-        return totalSplitShare
+        return total_split_share
 
 
 class PercentageSplit(Split):
-    def split(self, amount: float, participants: List[User], splitDetails: Dict[int, float]) -> Dict[int, float]:
-        # TO-DO: Add implementation for the percentage based split
-        return super().split(amount, participants, splitDetails)
+    def split(self, amount: float, participants: List[User],
+              split_details: Dict[int, float]) -> Dict[int, float]:
+        total_split_share = dict()
+        for participant in participants:
+            percentage = split_details.get(participant.id, 0.0)
+            total_split_share[participant.id] = amount * (percentage / 100)
+        return total_split_share
 
 
-class SplitFactory():
+class SplitFactory:
+    """Creates the appropriate Split strategy by type name."""
+
     @staticmethod
-    def createSplit(splitType: str):
-        splitTypes = {
+    def create(split_type: str) -> Split:
+        split_types = {
             "equal": EqualSplit,
-            "percentage": PercentageSplit
+            "percentage": PercentageSplit,
         }
-
-        split = splitTypes.get(splitType, None)
-
-        if not split:
-            raise Exception("Invalid split type!")
-        
-        return split()
+        split_cls = split_types.get(split_type)
+        if not split_cls:
+            raise ValueError(f"Invalid split type: {split_type}")
+        return split_cls()
 
 
 @dataclass
@@ -70,39 +76,39 @@ class UserPair:
 
 class Observer(ABC):
     @abstractmethod
-    def onExpenseUpdate(self, expense):
-        pass 
+    def onExpenseUpdate(self, expense: 'Expense') -> None:
+        pass
 
     @abstractmethod
-    def onExpenseAdded(self, expense):
-        pass 
+    def onExpenseAdded(self, expense: 'Expense') -> None:
+        pass
 
 
 @dataclass
 class BalanceSheet(Observer):
+    """Tracks pairwise balances and computes simplified settlements."""
     balances: Dict[UserPair, float]
-    userManager: UserManager = field(default_factory = UserManager)
+    user_manager: UserManager = field(default_factory=UserManager)
 
-    def onExpenseUpdate(self, expense: Expense):
+    def onExpenseUpdate(self, expense: 'Expense') -> None:
         self.updateBalances(expense)
 
-    def onExpenseAdded(self, expense):
+    def onExpenseAdded(self, expense: 'Expense') -> None:
         self.updateBalances(expense)
 
-    def updateBalances(self, expense: Expense):
+    def updateBalances(self, expense: 'Expense') -> None:
         creditor = expense.payer
-        splitShares = expense.shares
+        split_shares = expense.shares
 
-        for userId, share in splitShares.items():
-            debtor = self.userManager.getUser(userId)
+        for user_id, share in split_shares.items():
+            debtor = self.user_manager.getUser(user_id)
             if debtor is not None and debtor != creditor:
-                userPair = UserPair(debtor, creditor)
-                currBalance = self.balances.get(userPair, 0.0)
-                self.balances[userPair] = currBalance + share 
-    
-    # Get the net balance between two users
-    # We will return the amount user1 owes user2 (negative if user2 owes user1)
-    def getBalance(self, user1: User, user2:User):
+                user_pair = UserPair(debtor, creditor)
+                curr_balance = self.balances.get(user_pair, 0.0)
+                self.balances[user_pair] = curr_balance + share
+
+    def getBalance(self, user1: User, user2: User) -> float:
+        """Return the amount user1 owes user2 (negative if user2 owes user1)."""
         pair1 = UserPair(user1, user2)
         pair2 = UserPair(user2, user1)
 
@@ -110,105 +116,88 @@ class BalanceSheet(Observer):
         balance2 = self.balances.get(pair2, 0.0)
 
         return balance1 - balance2
-    
-    def getTotalBalance(self, user: User):
 
+    def getTotalBalance(self, user: User) -> float:
         total = 0
 
-        for userPair, amount in self.balances.items():
-            creditor = userPair.payee
-            debitor = userPair.payer
+        for user_pair, amount in self.balances.items():
+            creditor = user_pair.payee
+            debitor = user_pair.payer
 
             if creditor == user:
-                total += amount 
-            
+                total += amount
+
             if debitor == user:
-                total -= amount 
+                total -= amount
 
-        return total 
+        return total
 
+    def calculateNetBalances(self) -> Dict[User, float]:
+        net_balances: Dict[User, float] = dict()
 
-    def calculateNetBalances(self):
-        netBalances = dict() # user -> float
+        for user_pair, amount in self.balances.items():
+            debtor = user_pair.payer
+            creditor = user_pair.payee
 
-        for userPair, amount in self.balances.items():
-            debtor = userPair.payer
-            creditor = userPair.payee
-
-            if debtor in netBalances:
-                netBalances[debtor] -= amount
+            if debtor in net_balances:
+                net_balances[debtor] -= amount
             else:
-                netBalances[debtor] = -amount 
+                net_balances[debtor] = -amount
 
-            if creditor in netBalances:
-                netBalances[creditor] += amount
-            else: 
-                netBalances[creditor] = amount 
+            if creditor in net_balances:
+                net_balances[creditor] += amount
+            else:
+                net_balances[creditor] = amount
 
-        return netBalances
+        return net_balances
 
-    def getSimplifiedSettlements(self):
-        """
-            - Simplifies the balances into a list of transactions to settle all the debts
-            - Simple and straightforward implementation of the problem, may provide inaccurate results
-            - return list of transactions to settle all the debts
-        """
-        # Step 1: Calculate net balance for each user
-        netBalances = self.calculateNetBalances()
-        
-        # Step 2: separate users into debtors and creditors
+    def getSimplifiedSettlements(self) -> List['Transaction']:
+        """Greedy matching of debtors and creditors into settlement transactions."""
+        net_balances = self.calculateNetBalances()
+
         debtors = list()
         creditors = list()
-        for user, bal in netBalances.items():
+        for user, bal in net_balances.items():
             if bal > 0:
                 creditors.append(user)
             if bal < 0:
-                debtors.append(user) 
-        
+                debtors.append(user)
 
-        # Step 3: Match creditors and debtors to create Transactions
-        transactions : List[Transaction] = list()
-        creditorIndex, debtorIndex = 0, 0
+        transactions: List[Transaction] = list()
+        creditor_index, debtor_index = 0, 0
 
-        while creditorIndex < len(creditors) and debtorIndex < len(debtors):
-            creditor = creditors[creditorIndex]
-            debtor = debtors[debtorIndex]
+        while creditor_index < len(creditors) and debtor_index < len(debtors):
+            creditor = creditors[creditor_index]
+            debtor = debtors[debtor_index]
 
-            creditorBal = netBalances[creditor]
-            debtorBal = netBalances[debtor]
+            creditor_bal = net_balances[creditor]
+            debtor_bal = net_balances[debtor]
 
-            transferAmt = min(creditorBal, abs(debtorBal))
+            transfer_amt = min(creditor_bal, abs(debtor_bal))
 
-            netBalances[creditor] -= transferAmt
-            netBalances[debtor] += transferAmt
+            net_balances[creditor] -= transfer_amt
+            net_balances[debtor] += transfer_amt
 
-            if abs(netBalances[creditor]) < 0.001:
-                creditorIndex += 1
-            
-            if abs(netBalances[debtor]) < 0.001:
-                debtorIndex += 1
+            if abs(net_balances[creditor]) < 0.001:
+                creditor_index += 1
 
-            transaction = Transaction(creditor, debtor, transferAmt)
+            if abs(net_balances[debtor]) < 0.001:
+                debtor_index += 1
+
+            transaction = Transaction(creditor, debtor, transfer_amt)
             transactions.append(transaction)
-        
+
         return transactions
-    
 
-    def getSubOptimalMinimumSettlements(self):
-        # Step 1: Calculate net balance for each user
-        netBalances = self.calculateNetBalances()
+    def getSubOptimalMinimumSettlements(self) -> int:
+        """Backtracking approach — O(n!) worst case."""
+        net_balances = self.calculateNetBalances()
+        balances_list = [bal for bal in net_balances.values()]
+        return self.subOptimalDFS(0, balances_list, len(balances_list))
 
-        # Step 2: Find list of the balances (credits or debts)
-        balancesList = [ bal for bal in netBalances.values() ]
-
-        return self.subOptimalDFS(0, balancesList, len(balancesList))
-    
-    def subOptimalDFS(self, idx, balances, n) -> int:
+    def subOptimalDFS(self, idx: int, balances: List[float], n: int) -> int:
         """
-            T.C. -> O(n-1)!
-            At first call, I have n-1 options, similarly on next I will have n-2 options ... in each call, we are moving the index by 1, and trying to settle the amount by future creditors
-            T.C. -> (n-1)*(n-2)*...(1) -> O(n-1)! -> O(n)!
-            Since, it follows backtracking it will always help us in computing the correct solution, as we are keeping the cost angle in scope always.
+        T.C. -> O((n-1)!) backtracking over all possible settlement orderings.
         """
         while idx < n and balances[idx] == 0:
             idx += 1
@@ -216,89 +205,112 @@ class BalanceSheet(Observer):
         if idx == n:
             return 0
 
-        currBal = balances[idx]
+        curr_bal = balances[idx]
 
         cost = float('inf')
-        for nextidx in range(idx + 1, n):
-            nextBal = balances[nextidx]
+        for next_idx in range(idx + 1, n):
+            next_bal = balances[next_idx]
 
-            if nextBal * currBal < 0:
+            if next_bal * curr_bal < 0:
+                balances[next_idx] = next_bal + curr_bal
+                cost = min(cost, 1 + self.subOptimalDFS(idx + 1, balances, n))
+                balances[next_idx] = next_bal
 
-                balances[nextidx] = nextBal + currBal
-                cost = min(cost, 1 + self.subOptimalDFS(idx+1, balances, n))
-                balances[nextidx] = nextBal
+        return int(cost)
 
-        return int(cost) 
-
-
-    def getOptimalMinimumSettlements(self):
-        netBalances = self.calculateNetBalances()
-
-        balancesList = [ bal for bal in netBalances.values() ]
-        n = len(balancesList)
+    def getOptimalMinimumSettlements(self) -> int:
+        """Bitmask DP — finds maximum number of zero-sum subsets."""
+        net_balances = self.calculateNetBalances()
+        balances_list = [bal for bal in net_balances.values()]
+        n = len(balances_list)
         mask = 1 << n
-        dp = [-1 for _ in range(1<<n)]
+        dp = [-1 for _ in range(1 << n)]
+        return n - self.optimalDP(balances_list, mask, dp)
 
-        return n - self.optimalDP(balancesList, mask, dp)
-    
-    def sumOfMask(self, mask, balances):
-        sum = 0
+    def sumOfMask(self, mask: int, balances: List[float]) -> float:
+        total = 0
         for idx in range(len(balances)):
             if mask & (1 << idx):
-                sum += balances[idx]
+                total += balances[idx]
+        return total
 
-        return sum  
-
-    def optimalDP(self, balances, mask, dp) -> int:
+    def optimalDP(self, balances: List[float], mask: int, dp: List[int]) -> int:
         if mask == 0:
             return 0
-        
+
         if dp[mask] != -1:
             return dp[mask]
 
         n = len(balances)
-        
-        maxSubsets = 0
+        max_subsets = 0
 
         for submask in range(1, (1 << n)):
-            # check if submask (subset) is a part of mask (set)
             if mask & submask == submask and abs(self.sumOfMask(submask, balances)) < 0.0001:
-                maxSubsets = max(maxSubsets, 1 + self.optimalDP(balances, mask ^ submask, dp))
+                max_subsets = max(max_subsets, 1 + self.optimalDP(balances, mask ^ submask, dp))
 
-        dp[mask] = maxSubsets
-        return maxSubsets
+        dp[mask] = max_subsets
+        return max_subsets
 
 @dataclass
 class Expense:
-    id: int 
-    description: str 
-    amount: float 
-    payer: User 
+    """A single expense record with payer, participants, and computed shares."""
+    id: int
+    description: str
+    amount: float
+    payer: User
     participants: List[User]
     shares: Dict[int, float]
-    splitType: Split
+    split_type: Split
 
+
+# ─── Orchestrator ────────────────────────────────────────────
 
 @dataclass
 class ExpenseManager:
+    """Manages expenses and notifies observers on changes."""
     expenses: List[Expense]
     observers: List[Observer]
 
-    def addExpense(self, expense):
+    def addExpense(self, expense: Expense) -> None:
         self.expenses.append(expense)
         self.onExpenseAdded(expense)
-    
-    def onExpenseAdded(self, expense):
+
+    def onExpenseAdded(self, expense: Expense) -> None:
         for observer in self.observers:
             observer.onExpenseAdded(expense)
-
-    
 
 
 @dataclass
 class Transaction:
-    payee: User 
-    payer: User 
-    amount: float 
+    """Settlement transaction from payer to payee."""
+    payee: User
+    payer: User
+    amount: float
 
+
+# ─── Demo ───────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    alice = User(1, "Alice", "alice@test.com")
+    bob = User(2, "Bob", "bob@test.com")
+    charlie = User(3, "Charlie", "charlie@test.com")
+
+    user_mgr = UserManager(users={1: alice, 2: bob, 3: charlie})
+    balance_sheet = BalanceSheet(balances=dict(), user_manager=user_mgr)
+
+    split = SplitFactory.create("equal")
+    participants = [alice, bob, charlie]
+    shares = split.split(300.0, participants, {})
+
+    expense = Expense(1, "Dinner", 300.0, alice, participants, shares, split)
+
+    manager = ExpenseManager(expenses=[], observers=[balance_sheet])
+    manager.addExpense(expense)
+
+    print(f"Bob owes Alice: {balance_sheet.getBalance(bob, alice)}")
+    print(f"Charlie owes Alice: {balance_sheet.getBalance(charlie, alice)}")
+
+    settlements = balance_sheet.getSimplifiedSettlements()
+    for t in settlements:
+        print(f"{t.payer.name} pays {t.payee.name}: {t.amount}")
 

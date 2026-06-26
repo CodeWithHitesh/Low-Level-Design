@@ -1,16 +1,4 @@
-"""
-Parking Lot - Low Level Design
-
-Design Patterns:
-    - Strategy  → ParkingFeeStrategy, PaymentStrategy
-    - Factory   → VehicleFactory
-    - Composition → ParkingLot -> ParkingFloor -> ParkingSlot
-
-Principles:
-    - SRP: Each class has a single, well-defined responsibility
-    - OCP: New fee strategies / payment methods without modifying existing code
-    - DIP: High-level modules depend on abstractions (Strategy interfaces)
-"""
+"""Parking Lot implementation."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -34,18 +22,18 @@ class DurationType(Enum):
 
 class ParkingFeeStrategy(ABC):
     @abstractmethod
-    def calculateFee(self, vehicleType: VehicleType, duration: int,
-                     durationType: DurationType) -> float:
+    def calculateFee(self, vehicle_type: VehicleType, duration: int,
+                     duration_type: DurationType) -> float:
         pass
 
 
 class BasicHourlyFeeStrategy(ParkingFeeStrategy):
-    def calculateFee(self, vehicleType: VehicleType, duration: int,
-                     durationType: DurationType) -> float:
+    def calculateFee(self, vehicle_type: VehicleType, duration: int,
+                     duration_type: DurationType) -> float:
         rates = {VehicleType.CAR: 10, VehicleType.BIKE: 5}
-        hourly = rates.get(vehicleType, 10)
+        hourly = rates.get(vehicle_type, 10)
         total = hourly * duration
-        if durationType == DurationType.DAYS:
+        if duration_type == DurationType.DAYS:
             total *= 24
         return total
 
@@ -59,37 +47,40 @@ class PremiumHourlyFeeStrategy(ParkingFeeStrategy):
 
 @dataclass
 class Vehicle(ABC):
-    licensePlate: str
-    vehicleType: VehicleType
-    feeStrategy: ParkingFeeStrategy
+    """Abstract vehicle that delegates fee calculation to a strategy."""
+    license_plate: str
+    vehicle_type: VehicleType
+    fee_strategy: ParkingFeeStrategy
 
     @abstractmethod
-    def calculateFee(self, duration: int, durationType: DurationType) -> float:
+    def calculateFee(self, duration: int, duration_type: DurationType) -> float:
         pass
 
 
 class Car(Vehicle):
-    def calculateFee(self, duration: int, durationType: DurationType) -> float:
-        return self.feeStrategy.calculateFee(self.vehicleType, duration, durationType)
+    def calculateFee(self, duration: int, duration_type: DurationType) -> float:
+        return self.fee_strategy.calculateFee(self.vehicle_type, duration, duration_type)
 
 
 class Bike(Vehicle):
-    def calculateFee(self, duration: int, durationType: DurationType) -> float:
-        return self.feeStrategy.calculateFee(self.vehicleType, duration, durationType)
+    def calculateFee(self, duration: int, duration_type: DurationType) -> float:
+        return self.fee_strategy.calculateFee(self.vehicle_type, duration, duration_type)
 
 
 class VehicleFactory:
     """Centralises vehicle creation. Easy to extend for new types."""
 
     @staticmethod
-    def createVehicle(licensePlate: str, vehicleType: VehicleType,
-                      feeStrategy: ParkingFeeStrategy) -> Vehicle:
-        vehicleTypeMap = {
+    def create(license_plate: str, vehicle_type: VehicleType,
+               fee_strategy: ParkingFeeStrategy) -> Vehicle:
+        vehicle_type_map = {
             VehicleType.CAR: Car,
             VehicleType.BIKE: Bike,
         }
-        cls = vehicleTypeMap.get(vehicleType, Car)
-        return cls(licensePlate, vehicleType, feeStrategy)
+        cls = vehicle_type_map.get(vehicle_type)
+        if not cls:
+            raise ValueError(f"Unknown vehicle type: {vehicle_type}")
+        return cls(license_plate, vehicle_type, fee_strategy)
 
 
 # ─── Payment (Strategy Pattern) ──────────────────────────────
@@ -113,47 +104,48 @@ class CashPayment(PaymentStrategy):
 
 
 class Payment:
-    def __init__(self, amount: float, paymentStrategy: PaymentStrategy):
+    def __init__(self, amount: float, payment_strategy: PaymentStrategy):
         self.amount = amount
-        self.paymentStrategy = paymentStrategy
+        self.payment_strategy = payment_strategy
 
     def processPayment(self) -> bool:
         if self.amount <= 0:
-            print("Invalid payment amount!")
-            return False
-        return self.paymentStrategy.processPayment(self.amount)
+            raise ValueError("Invalid payment amount")
+        return self.payment_strategy.processPayment(self.amount)
 
 
 # ─── Parking Slot ─────────────────────────────────────────────
 
 @dataclass
 class ParkingSlot:
-    spotNumber: int
-    slotType: VehicleType
+    """A single slot on a floor, typed for a specific vehicle."""
+    spot_number: int
+    slot_type: VehicleType
     vehicle: Optional[Vehicle] = field(default=None)
-    isOccupied: bool = field(default=False)
+    is_occupied: bool = field(default=False)
 
-    def parkVehicle(self, vehicle: Vehicle):
-        if self.isOccupied:
-            raise Exception(f"Slot {self.spotNumber} already occupied by {self.vehicle.licensePlate}")
+    def parkVehicle(self, vehicle: Vehicle) -> None:
+        if self.is_occupied:
+            raise ValueError(f"Slot {self.spot_number} already occupied")
         self.vehicle = vehicle
-        self.isOccupied = True
+        self.is_occupied = True
 
-    def vacateSlot(self):
+    def vacateSlot(self) -> None:
         self.vehicle = None
-        self.isOccupied = False
+        self.is_occupied = False
 
 
 # ─── Parking Floor ────────────────────────────────────────────
 
 @dataclass
 class ParkingFloor:
-    floorNumber: int
-    parkingSlots: List[ParkingSlot]
+    """A floor containing multiple parking slots."""
+    floor_number: int
+    parking_slots: List[ParkingSlot]
 
-    def findAvailableSlot(self, vehicleType: VehicleType) -> Optional[ParkingSlot]:
-        for slot in self.parkingSlots:
-            if not slot.isOccupied and slot.slotType == vehicleType:
+    def findAvailableSlot(self, vehicle_type: VehicleType) -> Optional[ParkingSlot]:
+        for slot in self.parking_slots:
+            if not slot.is_occupied and slot.slot_type == vehicle_type:
                 return slot
         return None
 
@@ -166,32 +158,52 @@ class ParkingLot:
     Top-level orchestrator.
     Composition: ParkingLot → ParkingFloor → ParkingSlot
     """
-    parkingFloors: List[ParkingFloor]
+    parking_floors: List[ParkingFloor]
 
-    def findAvailableSlot(self, vehicleType: VehicleType) -> Optional[ParkingSlot]:
-        for floor in self.parkingFloors:
-            slot = floor.findAvailableSlot(vehicleType)
+    def findAvailableSlot(self, vehicle_type: VehicleType) -> Optional[ParkingSlot]:
+        for floor in self.parking_floors:
+            slot = floor.findAvailableSlot(vehicle_type)
             if slot:
                 return slot
         return None
 
-    def parkVehicle(self, vehicle: Vehicle):
-        slot = self.findAvailableSlot(vehicle.vehicleType)
+    def parkVehicle(self, vehicle: Vehicle) -> None:
+        """Find an available slot and park the vehicle."""
+        slot = self.findAvailableSlot(vehicle.vehicle_type)
         if not slot:
-            print("No available slot found!")
-            return
-
+            raise ValueError(f"No available slot for {vehicle.vehicle_type.value}")
         slot.parkVehicle(vehicle)
-        print(f"{vehicle.licensePlate} parked at slot {slot.spotNumber}.")
+        print(f"{vehicle.license_plate} parked at slot {slot.spot_number}.")
 
-    def vacateSlot(self, slot: ParkingSlot, vehicle: Vehicle):
-        if not slot.isOccupied:
-            print("Slot is already vacant!")
-            return
-
+    def vacateSlot(self, slot: ParkingSlot, vehicle: Vehicle) -> None:
+        """Free a slot and mark it as vacant."""
+        if not slot.is_occupied:
+            raise ValueError("Slot is already vacant")
         if slot.vehicle != vehicle:
-            print("This vehicle is not parked in this slot!")
-            return
-
+            raise ValueError("This vehicle is not parked in this slot")
         slot.vacateSlot()
-        print(f"Slot {slot.spotNumber} vacated. {vehicle.licensePlate} exited.")
+        print(f"Slot {slot.spot_number} vacated. {vehicle.license_plate} exited.")
+
+
+# ─── Demo ───────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    fee_strategy = BasicHourlyFeeStrategy()
+    car = VehicleFactory.create("KA-01-1234", VehicleType.CAR, fee_strategy)
+    bike = VehicleFactory.create("KA-01-5678", VehicleType.BIKE, fee_strategy)
+
+    slots_floor1 = [
+        ParkingSlot(spot_number=1, slot_type=VehicleType.CAR),
+        ParkingSlot(spot_number=2, slot_type=VehicleType.CAR),
+        ParkingSlot(spot_number=3, slot_type=VehicleType.BIKE),
+    ]
+    floor1 = ParkingFloor(floor_number=1, parking_slots=slots_floor1)
+    lot = ParkingLot(parking_floors=[floor1])
+
+    lot.parkVehicle(car)
+    lot.parkVehicle(bike)
+
+    fee = car.calculateFee(3, DurationType.HOURS)
+    print(f"Fee for {car.license_plate}: ₹{fee}")
+
+    lot.vacateSlot(slots_floor1[0], car)

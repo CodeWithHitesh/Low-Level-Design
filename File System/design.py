@@ -1,103 +1,125 @@
-from dataclasses import dataclass, field
-from datetime import date, datetime
-from typing import List, Dict
-from abc import abstractmethod, ABC
+"""File System implementation."""
 
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Dict
+
+
+# ─── Abstract Base Class (Composite Pattern) ──────────────────
 
 @dataclass
 class FileSystemNode(ABC):
-    name: str 
-    lastModified: date = field(default_factory=datetime.now)
-    createdAt: date = field(default_factory=datetime.now)
+    """Base node in a composite file-system tree."""
+    name: str
+    last_modified: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=datetime.now)
     children: Dict[str, 'FileSystemNode'] = field(default_factory=dict)
 
     @abstractmethod
-    def isFile(self):
-        pass 
+    def isFile(self) -> bool:
+        pass
 
-    def addChild(self, name, child: 'FileSystemNode'):
+    def addChild(self, name: str, child: 'FileSystemNode') -> None:
         self.children[name] = child
-        self.lastModified = datetime.now()
-    
-    def getChild(self, name):
+        self.last_modified = datetime.now()
+
+    def getChild(self, name: str) -> 'FileSystemNode':
         return self.children.get(name, None)
 
-    def deleteChild(self, name):
+    def deleteChild(self, name: str) -> None:
         if name not in self.children:
-            print("Child does not exists!")
-            return 
+            raise ValueError(f"Child '{name}' does not exist")
         self.children.pop(name)
-    
+
+
+# ─── Concrete Implementations ─────────────────────────────────
 
 @dataclass
 class File(FileSystemNode):
+    """Leaf node representing a file with content."""
     content: str = field(default_factory=str)
     extension: str = field(default_factory=str)
 
-    def isFile(self):
-        return True 
-    
-    def readContent(self):
+    def isFile(self) -> bool:
+        return True
+
+    def readContent(self) -> str:
         return self.content
-    
-    def writeContent(self, content):
+
+    def writeContent(self, content: str) -> None:
         self.content = content
-        self.lastModified = datetime.now()
-    
+        self.last_modified = datetime.now()
+
 
 @dataclass
 class Directory(FileSystemNode):
-    
-    def isFile(self):
-        return False 
-    
-    def listContents(self):
+    """Composite node representing a directory."""
+
+    def isFile(self) -> bool:
+        return False
+
+    def listContents(self) -> list:
         return list(self.children.keys())
 
 
-class FileSystem:
-    
-    _instance = None 
+# ─── Singleton Orchestrator ───────────────────────────────────
 
-    def __new__(cls):
+class FileSystem:
+    """Singleton file system with path-based navigation."""
+
+    _instance = None
+
+    def __new__(cls) -> 'FileSystem':
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance.root = Directory(name='/')
         return cls._instance
 
-    def isValidPath(self, path: str):
-
+    def isValidPath(self, path: str) -> bool:
         return path is not None and path != "" and path.startswith("/")
 
-    def createPath(self, path: str):
+    def createPath(self, path: str) -> bool:
+        """Create intermediate directories and final node (file or dir) for path."""
         if not self.isValidPath(path):
-            return False 
-        
-        pathComponents = path.split("/")
+            return False
+
+        path_components = path.split("/")
         curr = self.root
-        
-        for pathComponent in pathComponents[1:-1]:
-            if curr.getChild(pathComponent) is None:
-                newDir = Directory(pathComponent)
-                curr.addChild(pathComponent, newDir)
-            
-            child = curr.getChild(pathComponent)
 
-            curr = child 
-        
-        lastPathComponent = pathComponents[-1]
-        if lastPathComponent == "":
-            return False 
+        for component in path_components[1:-1]:
+            if curr.getChild(component) is None:
+                new_dir = Directory(component)
+                curr.addChild(component, new_dir)
+            curr = curr.getChild(component)
 
-        newNode = None 
-        if "." in lastPathComponent:
-            _, ext = lastPathComponent.rsplit(".", 1)
-            newNode = File(name=lastPathComponent, extension=ext, content="")
+        last_component = path_components[-1]
+        if last_component == "":
+            return False
+
+        if "." in last_component:
+            _, ext = last_component.rsplit(".", 1)
+            new_node = File(name=last_component, extension=ext, content="")
         else:
-            newNode = Directory(lastPathComponent)
+            new_node = Directory(last_component)
 
-        curr.addChild(lastPathComponent, newNode)
-        return True 
+        curr.addChild(last_component, new_node)
+        return True
+
+
+# ─── Demo ─────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    fs = FileSystem()
+    fs.createPath("/home/user/docs")
+    fs.createPath("/home/user/docs/notes.txt")
+
+    docs = fs.root.getChild("home").getChild("user").getChild("docs")
+    print(f"Contents of /home/user/docs: {docs.listContents()}")
+
+    notes = docs.getChild("notes.txt")
+    notes.writeContent("Hello, World!")
+    print(f"notes.txt content: {notes.readContent()}")
     
     def getParentPath(self, path: str):
         if path == "/":

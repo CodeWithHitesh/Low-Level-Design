@@ -1,3 +1,5 @@
+"""Rate Limiter implementation."""
+
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from enum import Enum
