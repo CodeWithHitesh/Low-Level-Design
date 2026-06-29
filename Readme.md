@@ -18,6 +18,7 @@ A collection of classic LLD problems solved in Python, scoped for a **45-minute 
 | 8 | [Rate Limiter](Rate%20Limiter/) | Strategy, Factory |
 | 9 | [Splitwise](Splitwise/) | Strategy, Factory, Observer |
 | 10 | [Resource Lease System](Resource%20Lease%20System/) | FIFO Deque, Lazy Deletion, Thread Safety |
+| 11 | [Movie Booking System](Movie%20Booking%20System/) | Strategy, Abstract Provider, Thread Safety |
 
 ---
 
@@ -41,7 +42,8 @@ A collection of classic LLD problems solved in Python, scoped for a **45-minute 
 | **Composite** | File/Directory hierarchy (File System) |
 | **Command** | Elevator requests (Elevator) |
 | **FIFO Deque + Lazy Deletion** | O(1) amortised token expiry (Resource Lease System) |
-| **Threading Lock** | Thread-safe token grant / release (Resource Lease System, Rate Limiter) |
+| **Threading Lock** | Thread-safe token grant / release (Resource Lease System, Rate Limiter, Movie Booking System) |
+| **Provider (Abstract Factory variant)** | Pluggable lock backend (Movie Booking System) |
 
 ---
 
