@@ -1,11 +1,9 @@
-"""Snake and Food Game implementation."""
-
 from abc import ABC, abstractmethod
-from collections import deque
 from enum import Enum
+from typing import Deque, List, Tuple
+from collections import deque
 from math import ceil
 from random import randint
-from typing import Deque, List, Tuple
 
 
 # ─── Enums ────────────────────────────────────────────────────
@@ -145,6 +143,8 @@ class PlayerStrategy(ABC):
 
 
 class HumanPlayerStrategy(PlayerStrategy):
+    """Human strategy that reads direction from stdin."""
+
     def makeMove(self, board: Board) -> List[int]:
         while True:
             choice = input("Enter direction (UP, DOWN, RIGHT, LEFT): ").upper()

@@ -15,16 +15,15 @@ Never modify files outside the target problem's folder. `temp.py` at the root is
 ## design.py Conventions
 
 **File layout (top to bottom):**
-1. Module docstring — names the design patterns and SOLID principles used
-2. Imports — `abc`, `dataclasses`, `enum`, `typing`, then `collections` / `threading` / `time` if needed
-3. Custom exceptions (if any) — optional; `ValueError` is sufficient for most interview rounds
-4. Enums
-5. Abstract base classes (ABCs)
-6. Concrete implementations
-7. `@dataclass` models
-8. Factory classes (`@staticmethod create(...)`)
-9. Orchestrator / service class
-10. `if __name__ == "__main__":` demo block
+1. Imports — `abc`, `dataclasses`, `enum`, `typing`, then `collections` / `threading` / `time` if needed
+2. Custom exceptions (if any) — optional; `ValueError` is sufficient for most interview rounds
+3. Enums
+4. Abstract base classes (ABCs)
+5. Concrete implementations
+6. `@dataclass` models
+7. Factory classes (`@staticmethod create(...)`)
+8. Orchestrator / service class
+9. `if __name__ == "__main__":` demo block
 
 **Style rules:**
 - Docstrings on classes and non-trivial methods; no inline comments

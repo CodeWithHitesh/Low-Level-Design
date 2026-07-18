@@ -1,14 +1,7 @@
-from enum import Enum
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
 from typing import Tuple, List, Optional
-
-
-"""Tic-Tac-Toe LLD module.
-
-Contains Strategy-based players, a Board, Observer interfaces, a PlayerFactory,
-and a Game controller. Code formatted and docstrings added for interview
-readability and maintainability.
-"""
 
 
 class Symbol(Enum):
@@ -22,7 +15,7 @@ class PlayerStrategy(ABC):
     """Abstract strategy for selecting a move."""
 
     @abstractmethod
-    def make_move(self, board) -> Tuple[int, int]:
+    def makeMove(self, board) -> Tuple[int, int]:
         """
         Return a tuple (row, col) for the next move given the board.
 
@@ -38,7 +31,7 @@ class PlayerStrategy(ABC):
 class HumanPlayerStrategy(PlayerStrategy):
     """Human strategy that reads integers from stdin."""
     
-    def make_move(self, board) -> Tuple[int, int]:
+    def makeMove(self, board) -> Tuple[int, int]:
         """
         Prompt the user for a row and column until a valid move is provided.
 
@@ -52,32 +45,23 @@ class HumanPlayerStrategy(PlayerStrategy):
             try:
                 row = int(input("Enter the row (0, 1, 2): "))
                 col = int(input("Enter the column (0, 1, 2): "))
-                if board.is_valid_move(row, col):
+                if board.isValidMove(row, col):
                     return row, col
                 print("Invalid move. Try again.")
             except ValueError:
                 print("Please enter valid integers for row and column.")
 
 
+@dataclass
 class Player:
     """Represents a player with a name, symbol and move strategy."""
+    name: str
+    symbol: Symbol
+    strategy: PlayerStrategy
 
-    def __init__(self, name: str, symbol: Symbol, strategy: PlayerStrategy):
-        """
-        Initialize a player.
-
-        Args:
-            name: Player's display name.
-            symbol: Symbol used on the board (Symbol.X or Symbol.O).
-            strategy: Strategy used to select moves.
-        """
-        self.name = name
-        self.symbol = symbol
-        self.strategy = strategy
-
-    def make_move(self, board) -> Tuple[int, int]:
+    def makeMove(self, board) -> Tuple[int, int]:
         """Delegate move selection to the player's strategy."""
-        return self.strategy.make_move(board)
+        return self.strategy.makeMove(board)
 
 
 # Factory Design Pattern for creating different player types
@@ -85,7 +69,7 @@ class PlayerFactory:
     """Simple factory to create different kinds of Player objects."""
 
     @staticmethod
-    def create_player(player_type: str, name: str, symbol: Symbol) -> Player:
+    def createPlayer(player_type: str, name: str, symbol: Symbol) -> Player:
         """
         Create a Player based on the requested type.
 
@@ -118,11 +102,11 @@ class Board:
         self.size = size
         self.grid = [[Symbol.EMPTY for _ in range(size)] for _ in range(size)]
 
-    def is_valid_move(self, row: int, col: int) -> bool:
+    def isValidMove(self, row: int, col: int) -> bool:
         """Return True if the given cell is within bounds and empty."""
         return 0 <= row < self.size and 0 <= col < self.size and self.grid[row][col] == Symbol.EMPTY
 
-    def mark_cell(self, row: int, col: int, symbol: Symbol) -> bool:
+    def markCell(self, row: int, col: int, symbol: Symbol) -> bool:
         """
         Mark a cell with the given symbol if valid.
 
@@ -134,12 +118,12 @@ class Board:
         Returns:
             True if the cell was marked, False if the move was invalid.
         """
-        if self.is_valid_move(row, col):
+        if self.isValidMove(row, col):
             self.grid[row][col] = symbol
             return True
         return False
 
-    def check_winner(self, symbol: Symbol) -> bool:
+    def checkWinner(self, symbol: Symbol) -> bool:
         """
         Check whether the given symbol has a winning line.
 
@@ -184,23 +168,23 @@ class GameObserver(ABC):
     """Observer interface for game events."""
 
     @abstractmethod
-    def on_move_made(self, player: Player, row: int, col: int) -> None:
+    def onMoveMade(self, player: Player, row: int, col: int) -> None:
         """Called when a move is successfully made."""
         pass
 
     @abstractmethod
-    def on_game_state_changed(self, state: State, winner: Optional[Player]) -> None:
+    def onGameStateChanged(self, state: State, winner: Optional[Player]) -> None:
         """Called when the game state changes (win/draw)."""
         pass
 
 
 class ConsoleDisplayObserver(GameObserver):
     """Console observer that prints basic notifications to stdout."""
-    def on_move_made(self, player: Player, row: int, col: int) -> None:
+    def onMoveMade(self, player: Player, row: int, col: int) -> None:
         """Print the move that was made."""
         print(f"{player.name} placed {player.symbol.value} at ({row}, {col})")
 
-    def on_game_state_changed(self, state: State, winner: Optional[Player] = None) -> None:
+    def onGameStateChanged(self, state: State, winner: Optional[Player] = None) -> None:
         """Print the final game state."""
         if state == State.DRAW:
             print("Game ended in a draw")
@@ -221,8 +205,8 @@ class Game:
         """
         self.size = size
         self.players = [
-                PlayerFactory.create_player('human', 'Player 1', Symbol.X),
-                PlayerFactory.create_player('human', 'Player 2', Symbol.O),
+                PlayerFactory.createPlayer('human', 'Player 1', Symbol.X),
+                PlayerFactory.createPlayer('human', 'Player 2', Symbol.O),
         ]
         self.board = Board(self.size)
         self.current_turn = 0
@@ -231,19 +215,19 @@ class Game:
         self.remaining_cells = self.size * self.size
         self.observers: List[GameObserver] = []
 
-    def register_observer(self, observer: GameObserver) -> None:
+    def registerObserver(self, observer: GameObserver) -> None:
         """Register an observer to receive game events."""
         self.observers.append(observer)
 
-    def notify_move(self, player: Player, row: int, col: int) -> None:
+    def notifyMove(self, player: Player, row: int, col: int) -> None:
         """Notify observers that a move was made."""
         for observer in self.observers:
-            observer.on_move_made(player, row, col)
+            observer.onMoveMade(player, row, col)
 
-    def notify_game_state_changed(self, state: State, winner: Optional[Player] = None) -> None:
+    def notifyGameStateChanged(self, state: State, winner: Optional[Player] = None) -> None:
         """Notify observers that the game state changed."""
         for observer in self.observers:
-            observer.on_game_state_changed(state, winner)
+            observer.onGameStateChanged(state, winner)
 
     def play(self) -> None:
         """
@@ -255,31 +239,31 @@ class Game:
         """
         while self.current_state == State.IN_PROGRESS:
             player = self.players[self.current_turn]
-            row, col = player.make_move(self.board)
+            row, col = player.makeMove(self.board)
 
-            self.board.mark_cell(row, col, player.symbol)
+            self.board.markCell(row, col, player.symbol)
 
             self.remaining_cells -= 1
-            self.notify_move(player, row, col)
+            self.notifyMove(player, row, col)
             self.board.display()
 
             # Check for a winner
-            if self.board.check_winner(player.symbol):
+            if self.board.checkWinner(player.symbol):
                 self.current_state = State.X_WIN if player.symbol == Symbol.X else State.O_WIN
-                self.notify_game_state_changed(self.current_state, player)
+                self.notifyGameStateChanged(self.current_state, player)
                 break
 
             # Check for draw
             if self.remaining_cells == 0:
                 self.current_state = State.DRAW
-                self.notify_game_state_changed(self.current_state, None)
+                self.notifyGameStateChanged(self.current_state, None)
                 break
 
             # Switch turn
             self.current_turn ^= 1
             self.current_symbol = self.players[self.current_turn].symbol
 
-    def reset_game(self) -> None:
+    def resetGame(self) -> None:
         """Reset board and game status while preserving observers and players."""
         self.board = Board(self.size)
         self.current_turn = 0
@@ -290,5 +274,5 @@ class Game:
 
 if __name__ == "__main__":
     game = Game()
-    game.register_observer(ConsoleDisplayObserver())
+    game.registerObserver(ConsoleDisplayObserver())
     game.play()

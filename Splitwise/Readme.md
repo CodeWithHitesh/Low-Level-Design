@@ -42,6 +42,17 @@
 
 ---
 
+## Core Design Principles
+
+| Principle | How It Applies |
+|-----------|---------------|
+| **SRP** | `Split` owns splitting math; `BalanceSheet` owns balance tracking; `ExpenseManager` owns expense lifecycle |
+| **OCP** | New split types (exact amount, weighted) via `Split` subclass + factory entry |
+| **DIP** | `ExpenseManager` depends on abstract `Observer`, not concrete `BalanceSheet` |
+| **Observer** | Adding expenses auto-updates balances without coupling expense creation to balance logic |
+
+---
+
 ## Design Patterns Used
 
 | Pattern | Where | Why |
@@ -97,6 +108,22 @@ Transaction
 
 ---
 
+## Algorithmic Approach
+
+### Net balance computation
+For each expense, the payer becomes a creditor for each participant's share. `updateBalances` accumulates these into `UserPair → amount` entries. `calculateNetBalances` aggregates all pairs into a single net balance per user.
+
+### Greedy settlement
+Separate users into creditors (positive net) and debtors (negative net). Match them greedily: transfer `min(creditor_balance, |debtor_balance|)` between the largest mismatches. Not minimum-transaction-optimal but O(n).
+
+### Backtracking DFS — minimum transactions
+For each non-zero balance at index `i`, try settling it with every opposite-sign balance at index `j > i`. Recursively solve the rest. Returns the minimum transaction count. O((n-1)!) worst case.
+
+### Bitmask DP — optimal minimum
+Find maximum number of subsets whose balances sum to zero. Answer = `n - max_zero_subsets`. O(3^n) via subset enumeration. Best for small n (≤15 users).
+
+---
+
 ## Settlement Algorithms
 
 ### 1. Simplified Settlements (Greedy)
@@ -119,6 +146,41 @@ Find the maximum number of subsets whose balances sum to zero → answer = n - m
 
 - **Time:** O(3^n) — iterate over all subsets and their sub-subsets.
 - **Optimality:** Correct and more efficient than DFS for small n.
+
+---
+
+## Edge Cases & Validation
+
+| Scenario | Guard |
+|----------|-------|
+| User not found | `UserManager.getUser()` raises `ValueError` |
+| Invalid split type | `SplitFactory.create()` raises `ValueError` |
+| Payer is also a participant | Included in split calculation; owes themselves nothing (net zero) |
+| Percentage splits don't sum to 100 | Caller responsibility (TODO: add validation) |
+| Zero-amount expense | Technically valid; produces zero shares |
+| Floating point drift in settlements | `abs(balance) < 0.001` threshold used in DP and greedy |
+
+---
+
+## Complexity Summary
+
+| Operation | Time | Space |
+|-----------|------|-------|
+| `addExpense` | O(p) p = participants | O(p) new balance entries |
+| `getBalance(u1, u2)` | O(1) dict lookup | O(1) |
+| `getSimplifiedSettlements` (greedy) | O(n) n = users | O(n) |
+| `getSubOptimalMinimumSettlements` (DFS) | O((n-1)!) | O(n) recursion depth |
+| `getOptimalMinimumSettlements` (DP) | O(3^n) | O(2^n) DP table |
+
+---
+
+## Extensibility
+
+- **Exact-amount split**: New `Split` subclass where each user's share is explicitly provided.
+- **Group expenses**: `Group` class containing members; expenses scoped to a group.
+- **Recurring expenses**: `RecurringExpense` with frequency; auto-creates expense periodically.
+- **Partial settlement**: Allow paying part of the owed amount; update `BalanceSheet` accordingly.
+- **Currency support**: Add currency field to `Expense`; settlement converts via exchange rates.
 
 ---
 

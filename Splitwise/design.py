@@ -1,5 +1,3 @@
-"""Splitwise implementation."""
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, List
@@ -7,6 +5,7 @@ from typing import Dict, List
 
 @dataclass
 class User:
+    """Registered user in the system."""
     id: int 
     name: str 
     email: str 
@@ -24,6 +23,8 @@ class UserManager:
 
 
 class Split(ABC):
+    """Abstract strategy for splitting an expense among participants."""
+
     @abstractmethod
     def split(self, amount: float, participants: List[User],
               split_details: Dict[int, float]) -> Dict[int, float]:
@@ -31,6 +32,8 @@ class Split(ABC):
 
 
 class EqualSplit(Split):
+    """Splits the amount equally among all participants."""
+
     def split(self, amount: float, participants: List[User],
               split_details: Dict[int, float]) -> Dict[int, float]:
         total_split_share = dict()
@@ -44,6 +47,8 @@ class EqualSplit(Split):
 
 
 class PercentageSplit(Split):
+    """Splits the amount by user-defined percentages."""
+
     def split(self, amount: float, participants: List[User],
               split_details: Dict[int, float]) -> Dict[int, float]:
         total_split_share = dict()
@@ -70,11 +75,14 @@ class SplitFactory:
 
 @dataclass
 class UserPair:
+    """Directional pair representing a debtor-creditor relationship."""
     payer: User 
     payee: User 
 
 
 class Observer(ABC):
+    """Observer interface for expense events."""
+
     @abstractmethod
     def onExpenseUpdate(self, expense: 'Expense') -> None:
         pass

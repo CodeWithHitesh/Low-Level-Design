@@ -11,7 +11,7 @@
 - Each **client** (identified by `client_id`) has their own request counter/state.
 - The limiter returns `True` (allow) or `False` (reject) for each incoming request.
 - Different algorithms have different accuracy/memory/burst trade-offs — the interviewer usually asks you to compare them.
-- Thread safety is critical: multiple threads may call `allow_request` for the same client concurrently.
+- Thread safety is critical: multiple threads may call `allowRequest` for the same client concurrently.
 
 ---
 
@@ -35,6 +35,26 @@
 
 ---
 
+## Core Design Principles
+
+| Principle | How It Applies |
+|-----------|---------------|
+| **SRP** | Each limiter class owns one algorithm; `RateLimiterFactory` owns creation; `RateLimiterService` owns facade |
+| **OCP** | New algorithms added via `RateLimiter` subclass + factory entry — no existing code changes |
+| **DIP** | `RateLimiterService` depends on abstract `RateLimiter`, not concrete algorithm class |
+| **Thread Safety** | Per-client `defaultdict(Lock)` isolates concurrent users |
+
+---
+
+## Design Patterns Used
+
+| Pattern | Where | Why |
+|---------|-------|-----|
+| **Strategy** | `RateLimiter` ABC → `FixedWindow`, `SlidingWindow`, `TokenBucket` | Swap algorithm at runtime without changing service logic |
+| **Factory** | `RateLimiterFactory.create()` | Decouple creation from usage; centralized construction with `**kwargs` |
+
+---
+
 ## Algorithm Comparison
 
 | Algorithm | Accuracy | Memory | Burst Handling | Weakness |
@@ -47,7 +67,7 @@
 
 ## Thread Safety Design
 
-Each limiter holds a `defaultdict(threading.Lock)` — one lock per `client_id`. `allow_request` acquires only the lock for the requesting client, so concurrent requests from different users never block each other.
+Each limiter holds a `defaultdict(threading.Lock)` — one lock per `client_id`. `allowRequest` acquires only the lock for the requesting client, so concurrent requests from different users never block each other.
 
 **Trade-off discussed in interviews:**
 
@@ -93,7 +113,7 @@ t=1:  tokens=1  → request → tokens=0  ✓  (refilled)
 RateLimiter (ABC)
     │  - max_requests: int
     │  - _locks: defaultdict[str, Lock]  (per-client)
-    │  - allow_request(client_id: str) -> bool  [abstract]
+    │  - allowRequest(client_id: str) -> bool  [abstract]
     │
     ├── FixedWindowRateLimiter
     │       - window_seconds
@@ -115,15 +135,49 @@ RateLimiterFactory
     └── create(limiter_type, **kwargs) -> RateLimiter
 
 RateLimiterService          ← main entry point for users
-    └── allow_request(client_id: str) -> bool
+    └── allowRequest(client_id: str) -> bool
 ```
+
+---
+
+## Edge Cases & Validation
+
+| Scenario | Guard |
+|----------|-------|
+| First request from unknown client | `defaultdict` creates lock and state automatically |
+| Concurrent requests same client | Per-client lock serializes; only one thread mutates state |
+| Window boundary spike (Fixed Window) | Known weakness — document as trade-off |
+| Clock monotonicity | Uses `time.monotonic()` — immune to NTP/DST jumps |
+| Unknown limiter type in factory | `ValueError` raised |
+| `max_requests = 0` | All requests blocked (valid edge case) |
+
+---
+
+## Complexity Summary
+
+| Operation | Time | Space |
+|-----------|------|-------|
+| `FixedWindow.allowRequest` | O(1) | O(1) per client |
+| `SlidingWindow.allowRequest` | O(k) k = expired entries evicted | O(n) timestamps per client |
+| `TokenBucket.allowRequest` | O(1) | O(1) per client |
+| Factory creation | O(1) | O(1) |
+
+---
+
+## Extensibility
+
+- **Sliding Window Counter** (hybrid): Weighted average of current + previous fixed window — more memory-efficient than log.
+- **Distributed rate limiting**: Redis + Lua script for atomic check-and-increment across multiple servers.
+- **Rate limit headers**: Return `X-RateLimit-Remaining`, `X-RateLimit-Reset` alongside the allow/deny decision.
+- **Tiered limits**: Different `max_requests` per user plan (free/pro/enterprise) — pass config to factory.
+- **Adaptive rate limiting**: Dynamically adjust limits based on server load metrics.
 
 ---
 
 ## How to Walk Through in the Interview
 
 1. **Clarify** (2 min) — single server or distributed? per-user or global? which algorithm preferred?
-2. **Define** the abstract interface first — `allow_request(client_id) -> bool`.
+2. **Define** the abstract interface first — `allowRequest(client_id) -> bool`.
 3. **Code** algorithms in order of complexity: Fixed → Sliding → Token Bucket (5–8 min each).
 4. **Add thread safety** — explain lock placement and the single-lock vs per-client trade-off.
 5. **Add Factory** — decouple creation, makes algorithm swappable.

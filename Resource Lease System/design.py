@@ -1,10 +1,8 @@
-﻿"""Resource Lease System -- Low-Level Design (45-min interview scope)"""
-
+﻿from dataclasses import dataclass
+from typing import Deque, Dict
+from collections import deque
 import threading
 import time
-from collections import deque
-from dataclasses import dataclass
-from typing import Deque, Dict
 
 
 class ResourceLeaseError(Exception):
@@ -12,6 +10,8 @@ class ResourceLeaseError(Exception):
 
 
 class InsufficientTokensError(ResourceLeaseError):
+    """Raised when requesting more tokens than currently available."""
+
     def __init__(self, requested: int, available: int) -> None:
         super().__init__(f"Requested {requested} token(s) but only {available} available.")
         self.requested = requested
@@ -19,6 +19,8 @@ class InsufficientTokensError(ResourceLeaseError):
 
 
 class InvalidGrantError(ResourceLeaseError):
+    """Raised when a grant ID is not found or not owned by the caller."""
+
     def __init__(self, grant_id: int, user_id: str) -> None:
         super().__init__(f"Grant '{grant_id}' is not valid for user '{user_id}'.")
         self.grant_id = grant_id
@@ -69,12 +71,12 @@ class ResourceLeaseSystem:
         self._lock: threading.Lock = threading.Lock()
         self._grant_counter: int = 0
 
-    def request_tokens(self, user_id: str, n: int) -> int:
+    def requestTokens(self, user_id: str, n: int) -> int:
         """Grant n tokens to user_id; return a unique grant_id."""
         if n <= 0:
             raise ValueError(f"n must be a positive integer, got {n}.")
         with self._lock:
-            self._process_expirations()
+            self._processExpirations()
             if n > self._available_tokens:
                 raise InsufficientTokensError(requested=n, available=self._available_tokens)
             self._grant_counter += 1
@@ -90,10 +92,10 @@ class ResourceLeaseSystem:
             self._expiry_queue.append(grant)
             return grant_id
 
-    def get_status(self) -> dict:
+    def getStatus(self) -> dict:
         """Return a snapshot of current pool state."""
         with self._lock:
-            self._process_expirations()
+            self._processExpirations()
             return {
                 "total_tokens": self._total_tokens,
                 "available_tokens": self._available_tokens,
@@ -101,21 +103,21 @@ class ResourceLeaseSystem:
                 "active_grants": len(self._active_grants),
             }
 
-    def release_tokens(self, user_id: str, grant_id: int) -> None:
+    def releaseTokens(self, user_id: str, grant_id: int) -> None:
         """
         Return tokens early using lazy deletion.
 
         Both 'grant not found' and 'grant owned by a different user' raise the same InvalidGrantError to avoid leaking grant ownership information to the caller.
         """
         with self._lock:
-            self._process_expirations()
+            self._processExpirations()
             grant = self._active_grants.get(grant_id)
             if grant is None or grant.user_id != user_id:
                 raise InvalidGrantError(grant_id=grant_id, user_id=user_id)
             self._available_tokens += grant.token_count
             del self._active_grants[grant_id]
 
-    def _process_expirations(self) -> None:
+    def _processExpirations(self) -> None:
         """
         Pop expired grants from the front of the deque.  O(1) amortised.
         Must be called with _lock already held.
@@ -139,15 +141,15 @@ if __name__ == "__main__":
     print("=== Scenario 1: grant -> early release -> auto-expiry ===")
     s = ResourceLeaseSystem(total_tokens=10, lease_duration_sec=2)
 
-    gid_alice = s.request_tokens("alice", 4)
-    gid_bob   = s.request_tokens("bob",   3)
-    print(f"Granted alice=4, bob=3  | {s.get_status()}")
+    gid_alice = s.requestTokens("alice", 4)
+    gid_bob   = s.requestTokens("bob",   3)
+    print(f"Granted alice=4, bob=3  | {s.getStatus()}")
 
-    s.release_tokens("alice", gid_alice)
-    print(f"Alice released early    | {s.get_status()}")
+    s.releaseTokens("alice", gid_alice)
+    print(f"Alice released early    | {s.getStatus()}")
 
     time.sleep(2.1)  # let Bob lease expire naturally
-    print(f"After Bob expiry        | {s.get_status()}")
+    print(f"After Bob expiry        | {s.getStatus()}")
 
     print()
     print("=== Scenario 2: multi-threaded stress test ===")
@@ -161,10 +163,10 @@ if __name__ == "__main__":
     def worker(tid: int) -> None:
         user = f"u{tid}"
         try:
-            gid = stress.request_tokens(user, EACH)
+            gid = stress.requestTokens(user, EACH)
             time.sleep(random.uniform(0.01, 0.1))
             if tid % 2 == 0:          # half release early, half let expire
-                stress.release_tokens(user, gid)
+                stress.releaseTokens(user, gid)
         except InsufficientTokensError as e:
             with err_lock:
                 errors.append(str(e))
@@ -174,15 +176,15 @@ if __name__ == "__main__":
     for t in threads: t.join()
 
     print(f"Contention errors (pool exhausted): {len(errors)}")
-    print(f"Available after threads finish     : {stress.get_status()['available_tokens']}")
+    print(f"Available after threads finish     : {stress.getStatus()['available_tokens']}")
 
     time.sleep(LEASE + 0.5)  # generous margin for all leases to expire
     with stress._lock:
-        stress._process_expirations()
+        stress._processExpirations()
         assert stress._available_tokens == POOL, "Token leak detected!"
         assert len(stress._active_grants) == 0, "Grant leak detected!"
 
-    status = stress.get_status()
+    status = stress.getStatus()
     print(f"After full expiry: available={status['available_tokens']}  active_grants={status['active_grants']}")
     print("All assertions passed -- no leaks.")
 

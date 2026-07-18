@@ -2,26 +2,40 @@
 
 ## Problem Statement
 
-Design a parking lot management system that handles vehicle entry/exit, slot allocation, fee calculation, and payment processing.
+> Design a parking lot management system that handles vehicle entry/exit, slot allocation, fee calculation, and payment processing. Support multiple vehicle types, floors, and payment methods.
 
 ---
 
-## Requirements
+## Candidate Understanding (first 2–3 minutes)
 
-### Setup
-- The parking lot has **multiple floors**, each with multiple slots.
-- Different vehicle types (**Bike, Car**) occupy matching slot types.
-- A **parking ticket** is issued on entry, linking a vehicle to an assigned slot.
-- The system calculates the **parking fee** based on duration and vehicle type.
+- Multi-floor lot with **typed slots** (Car slots, Bike slots) — vehicles can only park in matching slot types.
+- On entry: find an available matching slot → issue a ticket → mark slot occupied.
+- On exit: calculate fee based on duration + vehicle type → process payment → free the slot.
+- Different **fee strategies** (hourly, premium, surge) and **payment methods** (cash, card) are pluggable.
+- No double-parking: a slot either has a vehicle or doesn't.
 
-### Exit & Payment
-- A vehicle must **complete payment** before exiting.
-- Multiple payment methods (**Cash, Credit Card**) are supported via a strategy interface.
-- On successful payment, the slot is freed and the ticket invalidated.
+---
 
-### Constraints
-- A vehicle **cannot** park in an already occupied slot.
-- A vehicle **cannot** exit without a valid ticket and completed payment.
+## Scope for a 45-minute Round
+
+### Core Features (implement)
+
+| # | Feature | Key Classes |
+|---|---------|-------------|
+| 1 | Multi-floor slot model | `ParkingLot` → `ParkingFloor` → `ParkingSlot` |
+| 2 | Vehicle type hierarchy | `Vehicle` (ABC) → `Car`, `Bike` |
+| 3 | Slot allocation by vehicle type | `ParkingFloor.findAvailableSlot()` |
+| 4 | Fee calculation (Strategy) | `ParkingFeeStrategy` → `BasicHourlyFeeStrategy` |
+| 5 | Payment processing (Strategy) | `PaymentStrategy` → `CreditCardPayment`, `CashPayment` |
+| 6 | Vehicle creation | `VehicleFactory` |
+
+### TODO Features (mention but don't code)
+
+- **TODO:** Parking ticket with entry/exit timestamps
+- **TODO:** Entry/exit gate orchestration
+- **TODO:** Display board (Observer pattern) showing available slots per floor
+- **TODO:** Reservation system for pre-booking slots
+- **TODO:** Surge pricing / time-of-day pricing
 
 ---
 
@@ -79,6 +93,43 @@ Payment
 ├── amount, paymentStrategy
 └── processPayment() → bool
 ```
+
+---
+
+## Algorithmic Approach
+
+### Slot allocation — linear scan
+`ParkingFloor.findAvailableSlot(vehicleType)` iterates slots looking for the first unoccupied slot matching the vehicle type. O(s) per floor. For interview scope this is sufficient; production systems would use a free-list or bitmap per type.
+
+### Fee calculation — Strategy delegation
+`Vehicle.calculateFee(duration, durationType)` delegates to its `fee_strategy`. This avoids conditionals in the vehicle class and makes adding pricing tiers trivial.
+
+### Why composition (Lot → Floor → Slot)?
+Models the real physical hierarchy. Each layer owns its own responsibility: Lot routes to floors, Floor owns slots, Slot tracks occupancy. No deep inheritance trees needed.
+
+---
+
+## Edge Cases & Validation
+
+| Scenario | Guard |
+|----------|-------|
+| No available slot for vehicle type | `findAvailableSlot` returns None → caller handles |
+| Park in occupied slot | `parkVehicle` raises `ValueError` if `is_occupied` |
+| Vacate already-empty slot | `vacateSlot` checks occupancy before clearing |
+| Payment amount ≤ 0 | `Payment.processPayment()` raises `ValueError` |
+| Unknown vehicle type in factory | `VehicleFactory` raises `ValueError` |
+
+---
+
+## Complexity Summary
+
+| Operation | Time | Space |
+|-----------|------|-------|
+| `findAvailableSlot` (per floor) | O(s) s = slots on floor | O(1) |
+| `parkVehicle` (full lot) | O(f × s) f = floors | O(1) |
+| `vacateSlot` | O(1) | O(1) |
+| `calculateFee` | O(1) | O(1) |
+| `processPayment` | O(1) | O(1) |
 
 ---
 

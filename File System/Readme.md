@@ -45,6 +45,17 @@
 
 ---
 
+## Core Design Principles
+
+| Principle | How It Applies |
+|-----------|---------------|
+| **SRP** | `File` owns content; `Directory` owns children; `FileSystem` owns path navigation |
+| **OCP** | New node types (e.g., SymLink) via `FileSystemNode` subclass — no changes to `FileSystem` |
+| **LSP** | Any `FileSystemNode` works with `getChild`/`addChild` — uniform traversal |
+| **Composite** | Files and directories share the same interface; client code doesn't need type checks |
+
+---
+
 ## Design Patterns Used
 
 | Pattern | Where | Why |
@@ -65,6 +76,19 @@ Component  (FileSystemNode)  ──  common interface for all nodes
 **Why it fits:** A file system is a tree. When traversing a path like `/home/user/docs`, each call to `getChild()` works the same regardless of whether the current node is a deeply nested directory or a simple one. The client code (`FileSystem.getNode`, `createPath`) never does `isinstance` checks — it just calls the shared interface methods (`getChild`, `addChild`, `isFile`). This is the core benefit of Composite: **uniform treatment of leaves and composites**.
 
 **Real-world analogy:** The Unix VFS (Virtual File System) layer treats everything as an inode — files, directories, devices — all implement the same operations. Our `FileSystemNode` ABC is the simplified version of that.
+
+---
+
+## Algorithmic Approach
+
+### Path traversal
+`getNode(path)` splits on `/` and walks the tree one component at a time — O(d) where d = depth. Each `getChild()` is O(1) via `dict` lookup on the children map.
+
+### `createPath` with auto-mkdir
+Intermediate directories are created on-the-fly (like `mkdir -p`). Final component is detected as File (contains `.`) or Directory.
+
+### Why Dict for children?
+O(1) lookup by name. Trade-off: no ordering guarantee (acceptable — `ls` returns unsorted like a real filesystem hash directory).
 
 ---
 
@@ -95,6 +119,31 @@ FileSystem (Singleton)
     │  - writeFile(path, content) → bool
     │  - ls(path) → List[str]
 ```
+
+---
+
+## Edge Cases & Validation
+
+| Scenario | Guard |
+|----------|-------|
+| Invalid path (empty, no leading `/`) | `isValidPath()` returns False |
+| Path component doesn't exist | `getNode()` returns None |
+| Delete non-existent child | `ValueError` from `deleteChild()` |
+| Write to a directory path | `writeFile` checks `isFile()` → returns False |
+| Read from a directory | `readFile` checks `isFile()` → returns None |
+| `ls` on a file | Returns None (not a directory) |
+
+---
+
+## Complexity Summary
+
+| Operation | Time | Space |
+|-----------|------|-------|
+| `createPath` | O(d) d = path depth | O(d) new nodes |
+| `getNode` | O(d) | O(1) |
+| `deletePath` | O(d) traversal + O(1) delete | O(1) |
+| `readFile` / `writeFile` | O(d) traversal | O(1) |
+| `ls` | O(d) traversal + O(c) c = children | O(c) |
 
 ---
 

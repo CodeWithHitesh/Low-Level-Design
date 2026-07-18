@@ -40,6 +40,17 @@
 
 ---
 
+## Core Design Principles
+
+| Principle | How It Applies |
+|-----------|---------------|
+| **SRP** | `Board` owns grid state; `MoveSnake` owns movement logic; `Game` owns the loop; `Player` owns input |
+| **OCP** | New movement behaviors (e.g., power-ups) via `MoveSnake` subclass; new input sources via `PlayerStrategy` subclass |
+| **DIP** | `Game` depends on abstract `PlayerStrategy`, not concrete `HumanPlayerStrategy` |
+| **Template Method** | `MoveSnake.move()` defines the skeleton; subclasses vary only the tail behavior |
+
+---
+
 ## Design Patterns Used
 
 | Pattern | Where | Why |
@@ -47,6 +58,20 @@
 | **Template Method** | `MoveSnake.move()` → `_move()` | Common logic (add head, mark cell) in base; subclasses decide whether to remove tail (empty) or keep it (fruit) |
 | **Strategy** | `PlayerStrategy` / `HumanPlayerStrategy` | Swap input source (human, AI) without changing game logic |
 | **Factory** | `PlayerFactory.create()` | Create player with the right strategy by type string |
+
+---
+
+## Algorithmic Approach
+
+### Snake as a deque
+Head is `snake[0]`, tail is `snake[-1]`. Move = appendleft(new_head). On empty cell: pop tail (O(1)). On fruit: keep tail (snake grows). Deque gives O(1) at both ends.
+
+### Collision detection
+- **Wall collision**: `new_head_x < 0 or new_head_x >= rows` → game over (vertical boundary). Horizontal wraps via modulo.
+- **Self collision**: Check if new head position is already in snake body (`CellValues.SNAKE` on grid).
+
+### Fruit spawning
+`spawnNewFruit()` picks a random empty cell. O(1) amortised when the grid is mostly empty; worst-case O(n×m) if nearly full.
 
 ---
 
@@ -81,6 +106,40 @@ Game
     │  - player, board, snake, grid
     │  - play()  [main loop — input → collision check → move → display]
 ```
+
+---
+
+## Edge Cases & Validation
+
+| Scenario | Guard |
+|----------|-------|
+| Snake hits top/bottom wall | `new_head_x` out of bounds → `GAME_OVER` |
+| Snake hits itself | Grid cell is `SNAKE` → `GAME_OVER` |
+| Horizontal wrap-around | `new_head_y % cols` — wraps from right edge to left |
+| Invalid direction input | `HumanPlayerStrategy` catches `KeyError`, re-prompts |
+| Grid full (no empty cells for fruit) | Edge case for `spawnNewFruit` — game effectively won |
+
+---
+
+## Complexity Summary
+
+| Operation | Time | Space |
+|-----------|------|-------|
+| Move snake (empty cell) | O(1) appendleft + pop | O(1) |
+| Move snake (fruit cell) | O(1) appendleft only | O(1) |
+| Collision check | O(1) grid lookup | O(1) |
+| Spawn fruit | O(1) amortised (random probe) | O(1) |
+| Display board | O(n×m) | O(1) |
+
+---
+
+## Extensibility
+
+- **AI player**: `GreedyAIStrategy` using BFS/A* to find shortest path to fruit.
+- **Power-ups**: New `CellValues` entry + `MoveSnakePowerUp` subclass handling the effect.
+- **Speed progression**: `Game` decreases input timeout as score increases.
+- **Multiplayer**: Multiple snakes on same board; collision between snakes = game over for the collider.
+- **Observer for UI**: Decouple rendering from `Board.display()` — push state to GUI/web frontend.
 
 ---
 

@@ -1,9 +1,7 @@
-"""File System implementation."""
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Dict
+from datetime import datetime
 
 
 # ─── Abstract Base Class (Composite Pattern) ──────────────────
@@ -106,6 +104,58 @@ class FileSystem:
         curr.addChild(last_component, new_node)
         return True
 
+    def getParentPath(self, path: str) -> str:
+        """Return the parent directory path."""
+        if path == "/":
+            return "/"
+        path_components = path.split("/")
+        parent = "/".join(path_components[:-1])
+        return parent if parent else "/"
+
+    def getNode(self, path: str) -> 'FileSystemNode':
+        """Traverse the tree and return the node at path, or None."""
+        if path == "/":
+            return self.root
+        path_components = path.split("/")
+        curr = self.root
+        for component in path_components[1:]:
+            if curr.getChild(component) is None:
+                return None
+            curr = curr.getChild(component)
+        return curr
+
+    def deletePath(self, path: str) -> bool:
+        """Delete a node at path by removing it from its parent."""
+        if not self.isValidPath(path):
+            return False
+        parent_path = self.getParentPath(path)
+        parent_node = self.getNode(parent_path)
+        child_component = path.split("/")[-1]
+        parent_node.deleteChild(child_component)
+        return True
+
+    def readFile(self, path: str) -> str:
+        """Return file content or None if not a file."""
+        node = self.getNode(path)
+        if node is None or not node.isFile():
+            return None
+        return node.readContent()
+
+    def writeFile(self, path: str, content: str) -> bool:
+        """Write content to a file. Returns False if not a file."""
+        node = self.getNode(path)
+        if node is None or not node.isFile():
+            return False
+        node.writeContent(content)
+        return True
+
+    def ls(self, path: str) -> list:
+        """List directory contents. Returns None if not a directory."""
+        node = self.getNode(path)
+        if node is None or node.isFile():
+            return None
+        return node.listContents()
+
 
 # ─── Demo ─────────────────────────────────────────────────────
 
@@ -114,66 +164,7 @@ if __name__ == "__main__":
     fs.createPath("/home/user/docs")
     fs.createPath("/home/user/docs/notes.txt")
 
-    docs = fs.root.getChild("home").getChild("user").getChild("docs")
-    print(f"Contents of /home/user/docs: {docs.listContents()}")
+    print(f"Contents of /home/user/docs: {fs.ls('/home/user/docs')}")
 
-    notes = docs.getChild("notes.txt")
-    notes.writeContent("Hello, World!")
-    print(f"notes.txt content: {notes.readContent()}")
-    
-    def getParentPath(self, path: str):
-        if path == "/":
-            return "/"
-        
-        pathComponents = path.split("/")
-        parent = "/".join(pathComponents[:-1])
-        return parent if parent else "/"
-
-    def getNode(self, path: str):
-        if path == "/":
-            return self.root 
-        
-        pathComponents = path.split("/")
-        curr = self.root
-        
-        for pathComponent in pathComponents[1:]:
-            if curr.getChild(pathComponent) is None:
-                return None 
-            
-            child = curr.getChild(pathComponent)
-
-            curr = child 
-        
-        return curr
-
-    def deletePath(self, path: str):
-
-        if not self.isValidPath(path):
-            return False 
-        
-        parentPath = self.getParentPath(path)
-
-        parentNode = self.getNode(parentPath)
-
-        childComponent = path.split("/")[-1]
-
-        parentNode.deleteChild(childComponent)
-    
-    def readFile(self, path: str):
-        node = self.getNode(path)
-        if node is None or not node.isFile():
-            return None 
-        return node.readContent()
-    
-    def writeFile(self, path: str, content: str):
-        node = self.getNode(path)
-        if node is None or not node.isFile():
-            return False 
-        node.writeContent(content)
-        return True 
-    
-    def ls(self, path: str):
-        node = self.getNode(path)
-        if node is None or node.isFile():
-            return None 
-        return node.listContents()
+    fs.writeFile("/home/user/docs/notes.txt", "Hello, World!")
+    print(f"notes.txt content: {fs.readFile('/home/user/docs/notes.txt')}")

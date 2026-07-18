@@ -40,12 +40,39 @@
 
 ---
 
+## Core Design Principles
+
+| Principle | How It Applies |
+|-----------|---------------|
+| **SRP** | `Elevator` owns movement state; `ElevatorController` owns dispatch; `SchedulingStrategy` owns floor selection |
+| **OCP** | New scheduling algorithms via `SchedulingStrategy` subclass — no controller changes |
+| **DIP** | Controller depends on abstract `SchedulingStrategy`, not concrete FCFS/SCAN |
+| **Observer** | Display logic decoupled from elevator movement — add new observers without changing `Elevator` |
+
+---
+
 ## Design Patterns Used
 
 | Pattern | Where | Why |
 |---------|-------|-----|
 | **Strategy** | `SchedulingStrategy` / `FCFSStrategy` | Swap scheduling algorithms without changing controller logic |
 | **Observer** | `ElevatorObserver` / `DisplayObserver` | Decouple display updates from elevator movement logic |
+
+---
+
+## Algorithmic Approach
+
+### FCFS Strategy
+Simplest: serve requests in arrival order. Fair but inefficient — elevator may pass floors with pending requests.
+
+### SCAN Strategy (implemented)
+Serve closest floor in current direction, reverse at boundary. Minimizes total travel distance. O(n) scan over pending requests per step.
+
+### LOOK Strategy (implemented)
+Like SCAN but only travels as far as the last request in current direction (doesn't go to building boundary). Avoids unnecessary travel.
+
+### Why deque for requests?
+O(1) append (new requests) and O(1) popleft (FCFS). SCAN/LOOK iterate the full deque per step — acceptable for typical request counts (<100).
 
 ---
 
@@ -78,6 +105,40 @@ ElevatorController
 Building
     │  - name, elevator_controller, number_of_floors
 ```
+
+---
+
+## Edge Cases & Validation
+
+| Scenario | Guard |
+|----------|-------|
+| No pending requests | Strategy returns current floor; elevator stays idle |
+| Request to current floor | Elevator stays, request removed from queue |
+| Multiple elevators, same request | Controller dispatches to specific elevator by ID |
+| Elevator in MAINTENANCE state | Should not accept requests (TODO) |
+| All requests in opposite direction | SCAN reverses direction; LOOK switches immediately |
+
+---
+
+## Complexity Summary
+
+| Operation | Time | Space |
+|-----------|------|-------|
+| `FCFSStrategy.getNextFloor` | O(1) | O(1) |
+| `ScanStrategy.getNextFloor` | O(r) r = pending requests | O(1) |
+| `LookStrategy.getNextFloor` | O(r) | O(1) |
+| `controller.step()` | O(e × r) e = elevators | O(1) |
+| `moveToNextFloor` | O(r) filter completed requests | O(r) new deque |
+
+---
+
+## Extensibility
+
+- **Shortest Seek Time First**: New `SchedulingStrategy` subclass — pick nearest floor regardless of direction.
+- **Multi-elevator dispatch**: Assign incoming request to the nearest idle elevator (load balancing).
+- **Door open/close**: Add `DoorState` enum + timer; delay `moveToNextFloor` until doors close.
+- **Weight sensor**: Add `current_load` to `Elevator`; reject requests if at capacity.
+- **Emergency mode**: Add `EMERGENCY` state; override strategy to go to ground floor.
 
 ---
 

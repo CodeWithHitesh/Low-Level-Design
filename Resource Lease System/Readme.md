@@ -9,7 +9,7 @@
 ## Candidate Understanding (first 2–3 minutes)
 
 - The pool holds a **fixed number of identical tokens** — no distinction between them.
-- A **lease** is a batch grant: one `request_tokens` call grants `n` tokens for a constant duration.
+- A **lease** is a batch grant: one `requestTokens` call grants `n` tokens for a constant duration.
 - Each grant gets a unique `grant_id` so a user can hold **multiple concurrent batches**.
 - On expiry (or early release), tokens return to the pool and become available for others.
 - Thread safety is critical: multiple threads may request/release tokens concurrently.
@@ -23,9 +23,9 @@
 | # | Feature | Key Class / Mechanism |
 |---|---------|----------------------|
 | 1 | Initialise pool with configurable size and lease duration | `ResourceLeaseSystem.__init__` |
-| 2 | Request `n` tokens; return a unique `grant_id` | `request_tokens` |
-| 3 | Release tokens early via `grant_id` | `release_tokens` — **Lazy Deletion** |
-| 4 | Auto-expiry with O(1) amortised cost | `_process_expirations` — **FIFO Deque** |
+| 2 | Request `n` tokens; return a unique `grant_id` | `requestTokens` |
+| 3 | Release tokens early via `grant_id` | `releaseTokens` — **Lazy Deletion** |
+| 4 | Auto-expiry with O(1) amortised cost | `_processExpirations` — **FIFO Deque** |
 | 5 | Thread safety for all state mutations | `threading.Lock` |
 | 6 | Encapsulate grant data | `Grant` dataclass |
 | 7 | Custom exceptions for clean error handling | `InsufficientTokensError`, `InvalidGrantError` |
@@ -35,9 +35,30 @@
 - **TODO:** Per-user token cap — limit how many tokens a single user may hold simultaneously.
 - **TODO:** Priority queuing — VIP users bypass the queue and get tokens before regular users.
 - **TODO:** Lease renewal — extend an active grant's expiry without releasing and re-requesting.
-- **TODO:** Waitlist / blocking `request_tokens` — callers block until tokens become available instead of raising an error.
+- **TODO:** Waitlist / blocking `requestTokens` — callers block until tokens become available instead of raising an error.
 - **TODO:** Metrics — track utilisation rate, peak concurrent grants, average lease hold time.
 - **TODO:** Persistence — snapshot pool state to disk/DB so the system survives restarts.
+
+---
+
+## Core Design Principles
+
+| Principle | How It Applies |
+|-----------|---------------|
+| **SRP** | `ResourceLeaseSystem` owns pool logic; `Grant` is a pure data carrier; exceptions are self-descriptive |
+| **OCP** | New expiry policies or priority schemes can be added without modifying existing grant/release logic |
+| **DIP** | Callers interact via `requestTokens`/`releaseTokens` interface — internal data structures are hidden |
+| **Thread Safety** | Single `threading.Lock` acceptable here (one shared pool); per-entity lock would add unnecessary complexity |
+
+---
+
+## Design Patterns Used
+
+| Pattern | Where | Why |
+|---------|-------|-----|
+| **FIFO Deque + Lazy Deletion** | `_expiry_queue` + `_active_grants` | O(1) amortised expiry without a heap; lazy deletion avoids deque modification on early release |
+| **Dataclass** | `Grant` | Clean immutable-style data carrier with named fields |
+| **Custom Exception Hierarchy** | `ResourceLeaseError` → `InsufficientTokensError`, `InvalidGrantError` | Callers can catch broadly or narrowly; avoids leaking internal state |
 
 ---
 
@@ -54,7 +75,7 @@ grant at t=11  → expires at t=11+3600
 
 Every new grant *always* expires after all existing ones. Insertion order == expiration order, so a plain FIFO `deque` achieves O(1) append and O(1) popleft — no heap needed.
 
-### Why `_process_expirations()` is called inside `release_tokens()`
+### Why `_processExpirations()` is called inside `releaseTokens()`
 
 This is not about token accounting — tokens are restored correctly either way. It is about **semantic correctness**.
 
@@ -63,7 +84,7 @@ Without the call, a grant that has already expired could still be found in `_act
 With the call, expired grants are reclaimed first. If the target grant has expired, the dict lookup returns `None` and `InvalidGrantError` is raised — the correct outcome.
 
 ```
-_process_expirations()  ← run first; removes logically dead grants
+_processExpirations()  ← run first; removes logically dead grants
 dict lookup             ← if grant gone (expired), raise InvalidGrantError
                           if grant alive (not yet expired), proceed with release
 ```
@@ -73,7 +94,7 @@ dict lookup             ← if grant gone (expired), raise InvalidGrantError
 Searching and removing a node from the middle of a deque is O(n). Instead:
 
 ```
-release_tokens()                     _process_expirations() (later)
+releaseTokens()                     _processExpirations() (later)
   ├─ del _active_grants[grant_id]        ├─ pop front (ghost entry)
   └─ _available_tokens += n              ├─ grant_id in _active_grants? → NO
                                          └─ discard silently ✓
@@ -93,7 +114,7 @@ A single `threading.Lock` guards all shared mutable state:
 | `_active_grants` (dict) | Dict is not thread-safe for concurrent writes |
 | `_expiry_queue` (deque) | `append` / `popleft` are individually atomic in CPython but compound operations are not |
 
-**Lock scope:** The lock is acquired at the start of each public method and released before returning. `_process_expirations` is always called *inside* the held lock, so no re-entry issues arise.
+**Lock scope:** The lock is acquired at the start of each public method and released before returning. `_processExpirations` is always called *inside* the held lock, so no re-entry issues arise.
 
 ---
 
@@ -126,21 +147,21 @@ ResourceLeaseSystem
     │  - _active_grants: dict[str, Grant]  ← grant_id → Grant
     │  - _lock: threading.Lock
     │
-    ├── request_tokens(user_id, n) → grant_id
-    │       _process_expirations()
+    ├── requestTokens(user_id, n) → grant_id
+    │       _processExpirations()
     │       check _available_tokens ≥ n  → raises InsufficientTokensError
     │       increment counter → Grant → deque.append + dict insert
     │
-    ├── release_tokens(user_id, grant_id) → None
-    │       _process_expirations()
+    ├── releaseTokens(user_id, grant_id) → None
+    │       _processExpirations()
     │       dict lookup → raises InvalidGrantError if missing/wrong user
     │       del dict entry + restore token count  (lazy deletion)
     │
-    ├── get_status() → dict
-    │       _process_expirations()
+    ├── getStatus() → dict
+    │       _processExpirations()
     │       snapshot: total / available / active_grant count
     │
-    └── _process_expirations() → None  [internal, called under lock]
+    └── _processExpirations() → None  [internal, called under lock]
             while deque front is expired:
                 popleft → still in dict? → reclaim tokens + del entry
                           not in dict?  → ghost, discard silently
@@ -150,7 +171,7 @@ ResourceLeaseSystem
 
 ## Edge Cases & Validation
 
-### `release_tokens` — information hiding in `InvalidGrantError`
+### `releaseTokens` — information hiding in `InvalidGrantError`
 
 Two distinct failure modes exist:
 - `grant_id` does not exist in `_active_grants`
@@ -168,7 +189,7 @@ The current implementation uses a simple incrementing counter (`grant-1`, `grant
 UUIDs are unpredictable (122 bits of entropy), so a caller cannot enumerate other users' grant IDs even if they know the scheme. A counter is sequential and trivially guessable, making it an **IDOR (Insecure Direct Object Reference)** risk in public-facing APIs.
 
 **Why the counter is acceptable here:**  
-The second argument to `release_tokens` is `user_id`, and the code checks `grant.user_id != user_id` before acting. Both "grant not found" and "wrong owner" collapse into the same `InvalidGrantError`, so even if an attacker guesses a valid `grant_id`, they cannot release it without also knowing the correct `user_id`. The `user_id` check is the compensating control that neutralises the IDOR risk.
+The second argument to `releaseTokens` is `user_id`, and the code checks `grant.user_id != user_id` before acting. Both "grant not found" and "wrong owner" collapse into the same `InvalidGrantError`, so even if an attacker guesses a valid `grant_id`, they cannot release it without also knowing the correct `user_id`. The `user_id` check is the compensating control that neutralises the IDOR risk.
 
 **Summary:**
 
@@ -188,7 +209,7 @@ For a real production API, prefer UUID. For an in-memory interview solution, the
 | `total_tokens <= 0` | `ValueError` — a pool of zero or negative tokens is nonsensical |
 | `lease_duration_sec <= 0` | `ValueError` — a non-positive duration would expire grants instantly or invert ordering |
 
-### `request_tokens` — token count `n`
+### `requestTokens` — token count `n`
 
 | Input | Behaviour |
 |---|---|
@@ -209,9 +230,9 @@ If lease renewal is never implemented, converting to `frozen=True` is a safe and
 
 | Operation | Time | Space |
 |-----------|------|-------|
-| `request_tokens` | O(1) amortised | O(1) per grant |
-| `release_tokens` | O(1) | — |
-| `_process_expirations` | O(k) amortised, where k = expired grants popped | — |
+| `requestTokens` | O(1) amortised | O(1) per grant |
+| `releaseTokens` | O(1) | — |
+| `_processExpirations` | O(k) amortised, where k = expired grants popped | — |
 | Overall per-call | **O(1) amortised** | O(G) — G = total live grants |
 
 ---
@@ -239,12 +260,12 @@ If lease renewal is never implemented, converting to `frozen=True` is a safe and
   # In ResourceLeaseSystem.__init__:
   self._expiry_heap: list[Grant] = []   # heapq min-heap; replaces _expiry_queue
 
-  # In request_tokens (variable duration passed as argument):
+  # In requestTokens (variable duration passed as argument):
   grant = Grant(grant_id=..., user_id=..., token_count=n,
                 expiry_timestamp=time.monotonic() + lease_duration_sec)
   heapq.heappush(self._expiry_heap, grant)
 
-  # In _process_expirations:
+  # In _processExpirations:
   while self._expiry_heap and self._expiry_heap[0].expiry_timestamp <= now:
       front = heapq.heappop(self._expiry_heap)
       if front.grant_id in self._active_grants:
@@ -255,4 +276,4 @@ If lease renewal is never implemented, converting to `frozen=True` is a safe and
   The constant-duration deque stays O(1) because insertion order == expiry order. The heap is only needed when different grants can have different durations.
 - **Distributed pool** → replace the in-process lock with a Redis `DECRBY` + `EXPIRE` or a distributed lease via `SETNX`.
 - **Lease renewal** → update `expiry_timestamp` in the dict and append a new entry to the deque; the old entry becomes a ghost — lazy deletion handles it automatically.
-- **Waitlist** → use a `threading.Condition` instead of a bare `Lock`; waiting threads call `condition.wait()` and are notified by `release_tokens`.
+- **Waitlist** → use a `threading.Condition` instead of a bare `Lock`; waiting threads call `condition.wait()` and are notified by `releaseTokens`.

@@ -1,12 +1,10 @@
-"""Elevator System implementation."""
-
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Deque, List
+from collections import deque
 
 
 # ─── Enums ────────────────────────────────────────────────────
@@ -27,6 +25,7 @@ class State(Enum):
 
 @dataclass
 class Floor:
+    """Represents a building floor."""
     floor_num: int
 
 
@@ -43,6 +42,8 @@ class ElevatorObserver(ABC):
 
 
 class DisplayObserver(ElevatorObserver):
+    """Prints floor and state changes to console."""
+
     def onFloorChange(self, floor: Floor, elevator: Elevator) -> None:
         print(f"Floor changed to {floor.floor_num} for elevator {elevator.id}")
 
@@ -155,6 +156,8 @@ class LookStrategy(SchedulingStrategy):
 # ─── Command Pattern (Requests) ───────────────────────────────
 
 class ElevatorCommand(ABC):
+    """Abstract command interface for elevator requests."""
+
     @abstractmethod
     def execute(self) -> None:
         pass
@@ -258,6 +261,7 @@ class ElevatorController:
 
 @dataclass
 class Building:
+    """Represents a physical building."""
     id: int
     name: str
     num_of_floors: int
@@ -265,6 +269,7 @@ class Building:
 
 @dataclass
 class BuildingController:
+    """Associates a building with its elevator controller."""
     building: Building
     elevator_controller: ElevatorController
 

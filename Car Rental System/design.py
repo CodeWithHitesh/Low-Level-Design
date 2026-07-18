@@ -1,10 +1,8 @@
-"""Car Rental System implementation."""
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import date
 from enum import Enum
 from typing import List
+from datetime import date
 import threading
 
 
@@ -215,11 +213,15 @@ class PaymentStrategy(ABC):
 
 
 class CashPayment(PaymentStrategy):
+    """Cash payment strategy."""
+
     def processPayment(self, amount: float) -> None:
         print(f"Processing amount: {amount} by Cash!")
 
 
 class CardPayment(PaymentStrategy):
+    """Card payment strategy."""
+
     def processPayment(self, amount: float) -> None:
         print(f"Processing amount: {amount} by Card!")
 
@@ -241,7 +243,7 @@ class RentalSystem:
     def __init__(self, rental_stores: List[RentalStore], vehicle_factory: VehicleFactory,
                  reservation_manager: ReservationManager, payment_processor: PaymentProcessor):
         if RentalSystem._instance is not None:
-            raise RuntimeError("RentalSystem is a singleton — use get_instance()")
+            raise RuntimeError("RentalSystem is a singleton — use getInstance()")
         self.rental_stores = rental_stores
         self.vehicle_factory = vehicle_factory
         self.reservation_manager = reservation_manager
@@ -249,7 +251,7 @@ class RentalSystem:
         self.observers: List[Observer] = []
 
     @classmethod
-    def get_instance(cls, rental_stores: List[RentalStore], vehicle_factory: VehicleFactory,
+    def getInstance(cls, rental_stores: List[RentalStore], vehicle_factory: VehicleFactory,
                      reservation_manager: ReservationManager,
                      payment_processor: PaymentProcessor) -> 'RentalSystem':
         if cls._instance is None:
@@ -302,7 +304,7 @@ if __name__ == "__main__":
 
     reservation_mgr = ReservationManager()
     payment_proc = PaymentProcessor()
-    system = RentalSystem.get_instance([store], factory, reservation_mgr, payment_proc)
+    system = RentalSystem.getInstance([store], factory, reservation_mgr, payment_proc)
 
     user = User(1, "Alice")
     observer = UserObserver(user)

@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
-from collections import defaultdict
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Optional
-from datetime import datetime, timedelta
 from enum import Enum
+from typing import List, Dict, Tuple, Optional
+from collections import defaultdict
+from datetime import datetime, timedelta
 from threading import Lock
 
 
@@ -131,49 +131,52 @@ class LockService:
         self.provider = provider
         self.timeout_seconds = timeout_seconds
         # show_id -> physical_seat_id -> seat lock metadata
-        self.active_locks_by_show: Dict[int, Dict[int, SeatLock]] = {}
+        self.active_locks_by_show: defaultdict[int, Dict[int, SeatLock]] = defaultdict(dict)
 
-    def _purgeExpiredLocks(self, show_map: Dict[int, SeatLock],
-                           seat_lookup: Dict[int, 'ShowSeat'], now: datetime) -> None:
-        """Remove expired lock entries and reset corresponding ShowSeat status."""
+    def _purgeExpiredLocks(self, show_map: Dict[int, SeatLock], now: datetime) -> None:
+        """Remove expired lock entries. LOCKED/AVAILABLE are never persisted on ShowSeat,
+        so purging only needs to touch this service's own hold map."""
         expired = [seat_id for seat_id, lock in show_map.items() if lock.expires_at <= now]
         for seat_id in expired:
             del show_map[seat_id]
-            if seat_id in seat_lookup:
-                seat_lookup[seat_id].status = SeatStatus.AVAILABLE
 
-    def lockSeats(self, show_id: int, seats: List[ShowSeat], user_id: int) -> Tuple[bool, Optional[ShowSeat]]:
-        """Atomically lock requested seats for a user; returns (success, conflicting_seat)."""
+    def lockSeats(
+        self, show_id: int, seats: List[ShowSeat], user_id: int
+    ) -> Tuple[bool, Optional[ShowSeat]]:
+        """Atomically lock requested seats for a user; returns (success, conflicting_seat).
+
+        BOOKED is the only status persisted on ShowSeat, so the booked check reads
+        seat.status directly. LOCKED/AVAILABLE are derived purely from this service's
+        own hold map, so no other show seats need to be passed in or mutated.
+        """
         now = datetime.now()
-        seat_lookup: Dict[int, ShowSeat] = {seat.seat.id: seat for seat in seats}
 
         with self.provider.getShowLock(show_id):
-            show_map = self.active_locks_by_show.setdefault(show_id, {})
-            self._purgeExpiredLocks(show_map, seat_lookup, now)
+            show_map = self.active_locks_by_show[show_id]
+            self._purgeExpiredLocks(show_map, now)
 
             for seat in seats:
                 if seat.status == SeatStatus.BOOKED:
                     return False, seat
-                existing = show_map.get(seat.seat.id)
-                if existing and existing.user_id != user_id:
+                existing_lock = show_map.get(seat.seat.id)
+                if existing_lock and existing_lock.user_id != user_id:
                     return False, seat
 
             expiry = now + timedelta(seconds=self.timeout_seconds)
             for seat in seats:
                 show_map[seat.seat.id] = SeatLock(user_id=user_id, expires_at=expiry)
-                seat.status = SeatStatus.LOCKED
 
             return True, None
 
     def releaseSeats(self, show_id: int, seats: List[ShowSeat], user_id: int) -> None:
-        """Release locks held by user_id, resetting seats to AVAILABLE."""
+        """Release locks held by user_id. BOOKED seats are untouched; unbooked seats
+        simply lose their hold entry and become available again."""
         with self.provider.getShowLock(show_id):
             show_map = self.active_locks_by_show.get(show_id, {})
             for seat in seats:
-                existing = show_map.get(seat.seat.id)
-                if existing and existing.user_id == user_id:
+                existing_lock = show_map.get(seat.seat.id)
+                if existing_lock and existing_lock.user_id == user_id:
                     del show_map[seat.seat.id]
-                    seat.status = SeatStatus.AVAILABLE
 
 
 class PaymentStrategy(ABC):

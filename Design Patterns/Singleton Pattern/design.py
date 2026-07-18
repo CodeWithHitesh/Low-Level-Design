@@ -4,14 +4,15 @@
 
 
 class Board:
+    """Singleton board — only one instance ever created."""
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls) -> 'Board':
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         if not hasattr(self, "_initialized"):
             self.grid = [[None] * 8 for _ in range(8)]
             self._initialized = True
@@ -23,22 +24,23 @@ class Board:
 
 
 class DatabaseConnection:
+    """Singleton database connection — first call must provide host and port."""
     _instance = None
 
-    def __new__(cls, host=None, port=None):
+    def __new__(cls, host: str = None, port: int = None) -> 'DatabaseConnection':
         if cls._instance is None:
             if host is None or port is None:
                 raise ValueError("First call must provide host and port")
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, host=None, port=None):
+    def __init__(self, host: str = None, port: int = None) -> None:
         if not hasattr(self, "_initialized"):
             self.host = host
             self.port = port
             self._initialized = True
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"DatabaseConnection(host={self.host}, port={self.port})"
 
 

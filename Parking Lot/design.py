@@ -1,5 +1,3 @@
-"""Parking Lot implementation."""
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -92,21 +90,26 @@ class PaymentStrategy(ABC):
 
 
 class CreditCardPayment(PaymentStrategy):
+    """Credit card payment strategy."""
+
     def processPayment(self, amount: float) -> bool:
         print(f"Credit Card Payment: ₹{amount}")
         return True
 
 
 class CashPayment(PaymentStrategy):
+    """Cash payment strategy."""
+
     def processPayment(self, amount: float) -> bool:
         print(f"Cash Payment: ₹{amount}")
         return True
 
 
+@dataclass
 class Payment:
-    def __init__(self, amount: float, payment_strategy: PaymentStrategy):
-        self.amount = amount
-        self.payment_strategy = payment_strategy
+    """Wraps an amount and delegates to a payment strategy."""
+    amount: float
+    payment_strategy: PaymentStrategy
 
     def processPayment(self) -> bool:
         if self.amount <= 0:
