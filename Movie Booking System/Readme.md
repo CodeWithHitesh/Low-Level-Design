@@ -55,7 +55,7 @@
 
 | Pattern | Where | Why |
 |---------|-------|-----|
-| **Strategy** | `PaymentStrategy` → `CardPaymentStrategy`, `UpiPaymentStrategy` | Swap payment method at runtime without changing `BookingService` |
+| **Strategy** | `PaymentStrategy` → `CardPaymentStrategy` | Swap payment method at runtime without changing `BookingService` |
 | **Abstract Factory / Provider** | `LockProvider` → `InMemoryLockProvider` | Decouple synchronization primitive from lock business logic; migrate to distributed lock without rewriting `LockService` |
 
 ---
@@ -129,6 +129,7 @@ InMemoryLockProvider
     └── getShowLock(show_id) -> Lock
 
 LockService
+    - provider: LockProvider
     - active_locks_by_show: Dict[show_id, Dict[seat_id, SeatLock]]
     - timeout_seconds: int
     └── lockSeats(show_id, seats, user_id) -> Tuple[bool, Optional[ShowSeat]]
@@ -159,7 +160,7 @@ BookingService                    ← main orchestrator
 | Scenario | Guard |
 |----------|-------|
 | Two users book same seat concurrently | Availability check + lock write under show-level mutex |
-| User abandons checkout (lock expires) | Per-seat expiry check inside `lockSeats`; status reset to `AVAILABLE` |
+| User abandons checkout (lock expires) | Per-seat expiry check inside `lockSeats`; lock entry removed from service's hold map — `ShowSeat.status` was never mutated to `LOCKED`, so no reset needed |
 | Payment fails after lock acquired | `try/except` in `bookSeats` calls `releaseSeats` before re-raising |
 | Same user re-selects already-locked seat | `existing.user_id == user_id` → same-user extension allowed, expiry refreshed |
 | Seat already `BOOKED` (terminal state) | Rejected at `seat.status == BOOKED` check in `lockSeats` |

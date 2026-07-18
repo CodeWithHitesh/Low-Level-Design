@@ -10,7 +10,7 @@ from threading import Lock
 class SeatStatus(Enum):
     """Lifecycle states for a seat within a specific show."""
 
-    BOOKED = "Booked"
+    BOOKED = "BOOKED"
     AVAILABLE = "AVAILABLE"
     LOCKED = "LOCKED"
 
